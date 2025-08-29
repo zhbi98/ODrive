@@ -105,13 +105,17 @@ void Stm32UartRxStream::did_receive(uint8_t* buffer, size_t length) {
     }
 }
 
+/*构建多个 Stm32UartTxStream 实例*/
 Stm32UartTxStream uart_tx_stream(huart_);
 Stm32UartRxStream uart_rx_stream;
 
+/*将 Stm32UartTxStream, Stm32UartRxStream 实例传递给 fibre 库*/
 LegacyProtocolStreamBased fibre_over_uart(&uart_rx_stream, &uart_tx_stream);
 
 fibre::AsyncStreamSinkMultiplexer<2> uart_tx_multiplexer(uart_tx_stream);
 fibre::BufferedStreamSink<64> uart0_stdout_sink(uart_tx_multiplexer); // Used in communication.cpp
+
+/*构建 AsciiProtocol 实例*/
 AsciiProtocol ascii_over_uart(&uart_rx_stream, &uart_tx_multiplexer);
 
 bool uart0_stdout_pending = false;

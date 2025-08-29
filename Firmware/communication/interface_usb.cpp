@@ -140,16 +140,20 @@ void Stm32UsbRxStream::did_finish() {
     completer_.invoke_and_clear({connected_ ? kStreamOk : kStreamClosed, rx_end});
 }
 
+/*构建多个 Stm32UsbTxStream 实例*/
 Stm32UsbTxStream usb_cdc_tx_stream(CDC_IN_EP);
 Stm32UsbTxStream usb_native_tx_stream(ODRIVE_IN_EP);
 Stm32UsbRxStream usb_cdc_rx_stream(CDC_OUT_EP);
 Stm32UsbRxStream usb_native_rx_stream(ODRIVE_OUT_EP);
 
+/*将 Stm32UsbTxStream, Stm32UsbRxStream 实例传递给 fibre 库*/
 LegacyProtocolStreamBased fibre_over_cdc(&usb_cdc_rx_stream, &usb_cdc_tx_stream);
 LegacyProtocolPacketBased fibre_over_usb(&usb_native_rx_stream, &usb_native_tx_stream, USB_TX_DATA_SIZE - 1); // See note on MTU above
 
 fibre::AsyncStreamSinkMultiplexer<2> usb_cdc_tx_multiplexer(usb_cdc_tx_stream);
 fibre::BufferedStreamSink<64> usb_cdc_stdout_sink(usb_cdc_tx_multiplexer); // Used in communication.cpp
+
+/*构建 AsciiProtocol 实例，同时注册 rx_channel_ 和 tx_channel*/
 AsciiProtocol ascii_over_cdc(&usb_cdc_rx_stream, &usb_cdc_tx_multiplexer);
 
 bool usb_cdc_stdout_pending = false;

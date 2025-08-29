@@ -308,6 +308,31 @@ bool Motor::apply_config() {
     return true;
 }
 
+/**
+ * 这段代码是关于ODrive中电流采样和增益设置的一部分我们逐步分析这段代码：
+ * 
+ * 注释：
+ * // Solve for exact gain, then snap down to have equal or larger range as requested or largest possible range otherwise
+ * 这是一个注释，解释了代码的目的：首先计算精确的增益，然后调整它以获得等于或大于请求的范围，否则使用可能的最大范围。
+ * 
+ * 常量定义：
+ * constexpr float kMargin = 0.90f; 定义了一个常量kMargin，其值为0.90。这个常量用作一个安全裕量或缩放因子。
+ * constexpr float max_output_swing = 1.35f; // [V] out of amplifier 定义了一个常量max_output_swing，表示放大器输出的最大摆幅为1.35伏特。
+ * 
+ * 计算最大单位增益电流：
+ * float max_unity_gain_current = kMargin * max_output_swing * shunt_conductance_; // [A]
+ * 这里计算了最大单位增益电流。它使用了之前定义的kMargin、max_output_swing和shunt_conductance_（分流电导，单位为西门子）。
+ * 通过这个计算，我们得到了一个电流值，该值表示在最大输出摆幅和给定的分流电导下，放大器可以处理的最大电流。
+ * 
+ * 计算请求的增益：
+ * float requested_gain = max_unity_gain_current / config_.requested_current_range; // [V/V]
+ * 这里计算了请求的增益。增益是输出变化与输入变化的比率。在这里，它是电压比，所以单位是伏特/伏特（V/V）。
+ * config_.requested_current_range很可能是用户或配置文件中设置的期望电流范围。
+ * 通过将最大单位增益电流除以请求的电流范围，我们得到了一个增益值，该值表示在给定的电流范围内，输出电压如何随输入电压变化。
+ * 
+ * 总的来说，这段代码的目的是根据ODrive的配置和硬件限制（如放大器的最大输出摆幅和分流电阻的电导）
+ * 来计算一个合适的增益值。这个增益值用于确保在期望的电流范围内，放大器可以正常工作，并且不会超出其规格或导致任何损坏。
+ */
 // @brief Set up the gate drivers
 bool Motor::setup() {
     fet_thermistor_.update();
@@ -316,10 +341,29 @@ bool Motor::setup() {
     // Solve for exact gain, then snap down to have equal or larger range as requested
     // or largest possible range otherwise
     constexpr float kMargin = 0.90f;
-    constexpr float max_output_swing = 1.35f; // [V] out of amplifier
+    constexpr float max_output_swing = 1.35f; // [V] out of amplifier，即最大输出摆幅 1.35V，也就是说经过运放放大 x 倍后的最大输出电压因该在 1.35V 之间。
+    /*详细来说就是当采样电阻流过最大设计电流（例如60A）时在采样电阻两端可以产生最大分压，而这个分压经过运放放大 x 倍后的最大输出电压因该在 1.35V 之间。*/
     float max_unity_gain_current = kMargin * max_output_swing * shunt_conductance_; // [A]
     float requested_gain = max_unity_gain_current / config_.requested_current_range; // [V/V]
     
+    /**
+     * 为什么 float max_unity_gain_current = kMargin * max_output_swing * shunt_conductance_;  会得到电流值？
+     * 
+     * 在这段代码中，max_unity_gain_current的计算实际上是在确定放大器输出在最大摆幅时，通过分流电阻（shunt resistor）能够产生的最大电流。这里的“单位增益”（unity gain）并不是直接指放大器的增益为1，而是用于描述一种情况，即放大器的输出在其最大摆幅时，对应到分流电阻上的电流情况。
+     * 然而，这里的命名可能会有些误导。通常，单位增益指的是放大器增益为1的情况，但在这里，它更像是用来描述在不超出放大器最大输出能力的前提下，通过分流电阻可能达到的最大电流。
+     * 具体来说，max_unity_gain_current的计算过程是这样的：
+     * (1) max_output_swing是放大器的最大输出电压摆幅，单位是伏特（V）。
+     * (2) shunt_conductance_是分流电阻的电导，单位是西门子（S），它是电阻（单位为欧姆，Ω）的倒数。电导越大，电阻越小，导电能力越强。
+     * (3) kMargin是一个安全系数，用来确保放大器输出不会达到其极限值，从而留出一些余量来处理可能的瞬态过载或其他非理想情况。
+     * 
+     * 因此，当我们将max_output_swing（最大输出电压摆幅）乘以shunt_conductance_（分流电导）时，我们得到的是通过分流电阻的最大可能电流，单位是安培（A）。这是因为根据欧姆定律的变种形式，电流（I）等于电压（V）除以电阻（R），或者等于电压乘以电导（G）：
+     * [ I = \frac{V}{R} = V \cdot G ]
+     * 
+     * 在这里，我们用最大输出电压摆幅乘以电导来得到最大电流。然后，我们再乘以kMargin来降低这个最大值，以确保系统有一定的安全裕量。
+     * 不过，需要注意的是，这里的命名和计算方式可能会让不熟悉这段代码的人感到困惑。更准确的命名可能是 
+     * max_safe_current_through_shunt或类似的名称，以更清晰地表明这个变量的含义。
+     */
+
     float actual_gain;
     if (!gate_driver_.config(requested_gain, &actual_gain))
         return false;

@@ -717,6 +717,13 @@ extern "C" int main(void) {
             GPIO_InitStruct.Alternate = it->alternate_function;
         }
 
+        /**
+         * Odrive 将 IO 分类初始化，板上纯粹的 GPIO 功能（不与其他外设关联或复用）用于片间通信/控制，
+         * 且功能固定不可变更的 IO 在 gpio.c 文件中统一初始化。板上用于片间通信/控制，
+         * 与外设关联复用且功能固定不可变更的 IO 则与外设一起初始化，
+         * 例如复用为 SPI 管脚的 IO 则在 spi.c 文件中初始化。
+         * 而其余引出板外，并且支持灵活配置变更功能的多功能 IO 则在 main.cpp 文件中初始化。 
+         */
         switch (mode) {
             case ODriveIntf::GPIO_MODE_DIGITAL: {
                 GPIO_InitStruct.Mode = GPIO_MODE_INPUT;

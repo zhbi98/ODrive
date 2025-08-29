@@ -4,6 +4,11 @@
 #include "cmsis_os.h"
 #include "board.h"
 
+/**
+ * 虽然在启动时 SPI 统一初始化了同一的 SPI 模式，但是那个统一的初始化结构体不能适应所有使用了 SPI 的硬件模块，
+ * 所以每个使用了 SPI 的硬件模块中会定义一个属于自己模式的 SPI 初始化结构体，并将这个结构体传递到 stm32_spi_arbiter 对象中使用。
+ * 所以这就是为什么要在这里定义一个 SPI 初始化结构体。
+ */
 const SPI_InitTypeDef Drv8301::spi_config_ = {
     .Mode = SPI_MODE_MASTER,
     .Direction = SPI_DIRECTION_2LINES,
@@ -18,6 +23,11 @@ const SPI_InitTypeDef Drv8301::spi_config_ = {
     .CRCPolynomial = 10,
 };
 
+/**
+ * 先配置，后初始化，通过配置函数先计算出 regs_ 两个寄存器值，以及一个实际增益值，
+ * 同时判断新配置值与原配置值是否相同，相同不动作
+ * 两个寄存器值在初始化时才真正写入到寄存器中
+ */
 bool Drv8301::config(float requested_gain, float* actual_gain) {
     // Calculate gain setting: Snap down to have equal or larger range as
     // requested or largest possible range otherwise
@@ -65,6 +75,9 @@ bool Drv8301::config(float requested_gain, float* actual_gain) {
     return true;
 }
 
+/**
+ * 将配置阶段得到的两个寄存器值写入 DRV8301 的寄存器中，以生效
+ */
 bool Drv8301::init() {
     uint16_t val;
 
@@ -80,7 +93,12 @@ bool Drv8301::init() {
     enable_gpio_.write(true);
     osDelay(20); // t_spi_ready, max = 10ms
 
-    // Write current configuration
+    /**
+     * 特别值得注意的是，kRegNameControl1 和 regs_.control_register_1 被重复了五次。
+     * 这可能意味着为了确保写入操作成功，代码重复执行了写入操作。注释中提到：如果只执行一次写入操作，那么该操作往往会被忽略（不确定为什么）。
+     * 这可能是硬件或设备的一个特定行为，需要多次写入以确保配置生效。
+     */
+    // Write current configuration, 看注释部分的内容：如果只执行一次，写入操作往往会被忽略（不知道为什么）。
     bool wrote_regs = write_reg(kRegNameControl1, regs_.control_register_1)
                        && write_reg(kRegNameControl1, regs_.control_register_1)
                        && write_reg(kRegNameControl1, regs_.control_register_1)

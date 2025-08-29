@@ -141,8 +141,10 @@ void AsciiProtocol::cmd_set_position(char * pStr, bool use_checksum) {
         respond(use_checksum, "invalid motor %u", motor_number);
     } else {
         Axis& axis = axes[motor_number];
+        /**设置电机位置运动模式，再设置目标位置*/
         axis.controller_.config_.control_mode = Controller::CONTROL_MODE_POSITION_CONTROL;
         axis.controller_.input_pos_ = pos_setpoint;
+        /**判断参数个数，确定是否包含速度*/
         if (numscan >= 3)
             axis.controller_.input_vel_ = vel_feed_forward;
         if (numscan >= 4)
@@ -167,8 +169,10 @@ void AsciiProtocol::cmd_set_position_wl(char * pStr, bool use_checksum) {
         respond(use_checksum, "invalid motor %u", motor_number);
     } else {
         Axis& axis = axes[motor_number];
+        /**设置电机位置运动模式，再设置目标位置*/
         axis.controller_.config_.control_mode = Controller::CONTROL_MODE_POSITION_CONTROL;
         axis.controller_.input_pos_ = pos_setpoint;
+        /**判断参数个数，确定是否包含速度限制，力矩限制*/
         if (numscan >= 3)
             axis.controller_.config_.vel_limit = vel_limit;
         if (numscan >= 4)
@@ -192,8 +196,10 @@ void AsciiProtocol::cmd_set_velocity(char * pStr, bool use_checksum) {
         respond(use_checksum, "invalid motor %u", motor_number);
     } else {
         Axis& axis = axes[motor_number];
+        /**设置电机速度运动模式，再设置目标速度*/
         axis.controller_.config_.control_mode = Controller::CONTROL_MODE_VELOCITY_CONTROL;
         axis.controller_.input_vel_ = vel_setpoint;
+        /**判断参数个数，确定是否包含 torque_feed_forward*/
         if (numscan >= 3)
             axis.controller_.input_torque_ = torque_feed_forward;
         axis.watchdog_feed();
@@ -214,6 +220,7 @@ void AsciiProtocol::cmd_set_torque(char * pStr, bool use_checksum) {
         respond(use_checksum, "invalid motor %u", motor_number);
     } else {
         Axis& axis = axes[motor_number];
+        /**设置电机恒定力矩运动模式，再设置目标力矩*/
         axis.controller_.config_.control_mode = Controller::CONTROL_MODE_TORQUE_CONTROL;
         axis.controller_.input_torque_ = torque_setpoint;
         axis.watchdog_feed();

@@ -39,6 +39,11 @@ void Encoder::setup() {
 
     mode_ = config_.mode;
 
+    /**
+     * 虽然在启动时 SPI 统一初始化了同一的 SPI 模式，但是那个统一的初始化结构体不能适应所有使用了 SPI 的硬件模块，
+     * 所以每个使用了 SPI 的硬件模块中会定义一个属于自己模式的 SPI 初始化结构体，并将这个结构体传递到 stm32_spi_arbiter 对象中使用。
+     * 所以这就是为什么要在这里定义一个 SPI 初始化结构体。
+     */
     spi_task_.config = {
         .Mode = SPI_MODE_MASTER,
         .Direction = SPI_DIRECTION_2LINES,
@@ -81,11 +86,30 @@ bool Encoder::do_checks(){
 // Hardware Dependent
 //--------------------
 
+/**
+ * 在 ODrive 控制库的这段代码中，Encoder::enc_index_cb() 函数是一个回调函数，
+ * 当编码器检测到索引（Index）信号时会被调用。这个函数主要处理与编码器索引信号
+ * 相关的计数器和状态更新。
+ * 
+ * set_circular_count(0, false);
+ * 这行代码用于设置编码器的“循环计数”（circular count），将计数值重置为0。
+ * 参数 false 表示不启用自动偏移校准功能（如果有的话）。通过重置循环计数，
+ * 系统可以基于索引脉冲来重新确定电机位置的基准点。
+ * 
+ * set_linear_count((int32_t)(config_.index_offset * config_.cpr));
+ * 这行代码用于设置编码器的“线性计数”（linear count）。
+ * 计算方式是将配置中的索引偏移值 config_.index_offset 
+ * 乘以编码器每转脉冲数（CPR：Counts Per Revolution）。这样做的目的是在每次检测到索引信号时，
+ * 根据预设的偏移量调整电机的位置估计。例如，如果需要在索引信号处加上或减去一定的角度或者圈数，
+ * 可以通过配置 index_offset 来实现。
+ */
 // Triggered when an encoder passes over the "Index" pin
 // TODO: only arm index edge interrupt when we know encoder has powered up
 // (maybe by attaching the interrupt on start search, synergistic with following)
 void Encoder::enc_index_cb() {
+    /*检查是否启用了 Z 索引信号*/
     if (config_.use_index) {
+        /*索引脉冲信号圈数计算，已旋转一圈，清除脉冲累积*/
         set_circular_count(0, false);
         if (config_.use_index_offset)
             set_linear_count((int32_t)(config_.index_offset * config_.cpr));
@@ -95,6 +119,9 @@ void Encoder::enc_index_cb() {
                 axis_->controller_.anticogging_valid_ = true;
             }
         } else {
+            /*我们不能在 set_circular_count 使用update_offset设施，因为
+            我们还在有机会更新之前设置线性计数。因此：
+            使 idx 搜索之前可能发生的偏移校准失效*/
             // We can't use the update_offset facility in set_circular_count because
             // we also set the linear count before there is a chance to update. Therefore:
             // Invalidate offset calibration that may have happened before idx search
@@ -107,6 +134,7 @@ void Encoder::enc_index_cb() {
     index_gpio_.unsubscribe();
 }
 
+/*检查是否启用了 Z 索引信号，如果启用了索引信号则开启索引信号管脚中断，用于圈数计算/计数*/
 void Encoder::set_idx_subscribe(bool override_enable) {
     if (config_.use_index && (override_enable || !config_.find_idx_on_lockin_only)) {
         if (!index_gpio_.subscribe(true, false, enc_index_cb_wrapper, this)) {
@@ -127,6 +155,7 @@ void Encoder::update_pll_gains() {
     }
 }
 
+// 检查设备是否已经校准
 void Encoder::check_pre_calibrated() {
     // TODO: restoring config from python backup is fragile here (ACIM motor type must be set first)
     if (axis_->motor_.config_.motor_type != Motor::MOTOR_TYPE_ACIM) {
@@ -145,13 +174,31 @@ void Encoder::set_linear_count(int32_t count) {
     // Update states
     shadow_count_ = count;
     pos_estimate_counts_ = (float)count;
+    /*tim_cnt_sample_：指的是利用定时中断定时更新采集的编码器统计数*/
     tim_cnt_sample_ = count;
 
+    // 最后将值更新到硬件中：因为 tim_cnt_sample_ 和 timer_->Instance->CNT 是同步的，所以要同时置为相同值 count
     //Write hardware last
     timer_->Instance->CNT = count;
 
     cpu_exit_critical(prim);
 }
+
+/**
+ * ODrive 为何需要循环计数？
+ * 
+ * 在电机控制中，循环计数（circular count）是一个重要的概念，主要用于跟踪电机编码器输出的位置信息。
+ * 编码器每转会产生一定数量的脉冲，通过累计这些脉冲的数量，可以精确地确定电机轴的绝对位置。
+ * 在 ODrive 中，循环计数的作用包括：1. 位置追踪： 编码器的循环计数记录了电机从一个索引（Index）信号出现
+ * 到另一个索引信号出现之间转过的圈数。这样就可以实时知道电机转子相对于初始位置的具体位置，
+ * 这对于闭环控制系统至关重要。2. 防止数值溢出： 随着电机转动，编码器产生的脉冲数会不断累积。
+ * 为了避免32位或更高位宽的计数器因超过其最大值而导致溢出问题，使用循环计数方法可以在达到最大值时自动回绕至最小值，
+ * 并继续累加，从而维持连续且准确的位置跟踪。3. 绝对定位与参考点更新： 当编码器检测到索引信号（通常是一次性的高电平脉冲）时，
+ * 系统可以通过重置循环计数并结合索引偏移量进行绝对位置校准。这有助于确保每次找到索引信号时，
+ * 都能够恢复到已知的基准位置，这对于实现精确的零点回归、多圈定位以及初始化阶段的位置识别都极为重要。
+ * 4. 抗干扰与稳定性： 循环计数还可以帮助系统在受到噪声、丢包等干扰时保持稳定的电机位置估计，
+ * 通过算法处理可以纠正短时间内的位置误差，提高系统的整体性能和可靠性。
+ */
 
 // Function that sets the CPR circular tracking encoder count to a desired 32-bit value.
 // Note that this will get mod'ed down to [0, cpr)
@@ -165,7 +212,9 @@ void Encoder::set_circular_count(int32_t count, bool update_offset) {
     }
 
     // Update states
+    /*限值，将 count 限制到 config_.cpr 范围之内，例如限值为 4000*/
     count_in_cpr_ = mod(count, config_.cpr);
+    /*已旋转一圈，清除 count_in_cpr_ 以及 pos_cpr_counts_*/
     pos_cpr_counts_ = (float)count_in_cpr_;
 
     cpu_exit_critical(prim);
@@ -191,10 +240,12 @@ bool Encoder::run_direction_find() {
     bool success = axis_->run_lockin_spin(lockin_config, false);
 
     if (success) {
+        /*shadow_count_ 会持续更新，shadow_count_  大于暂存值说明在持续正转*/
         // Check response and direction
         if (shadow_count_ > init_enc_val + 8) {
             // motor same dir as encoder
             config_.direction = 1;
+        /*shadow_count_ 会持续更新，shadow_count_  小于于暂存值说明在持续反转*/
         } else if (shadow_count_ < init_enc_val - 8) {
             // motor opposite dir as encoder
             config_.direction = -1;
@@ -206,7 +257,7 @@ bool Encoder::run_direction_find() {
     return success;
 }
 
-
+/**运行霍尔极性校准*/
 bool Encoder::run_hall_polarity_calibration() {
     Axis::LockinConfig_t lockin_config = axis_->config_.calibration_lockin;
     lockin_config.finish_distance = lockin_config.vel * 3.0f; // run for 3 seconds
@@ -268,6 +319,7 @@ bool Encoder::run_hall_polarity_calibration() {
     return success;
 }
 
+// 运行霍尔相位校准
 bool Encoder::run_hall_phase_calibration() {
     Axis::LockinConfig_t lockin_config = axis_->config_.calibration_lockin;
     lockin_config.finish_distance = lockin_config.vel * 30.0f; // run for 30 seconds
@@ -322,6 +374,11 @@ bool Encoder::run_hall_phase_calibration() {
     return success;
 }
 
+/**
+ * 将电机朝一个方向转动一会儿，然后朝另一个方向转动
+ * 方向，以求电气相位之间的偏移量 0
+ * 和编码器状态 0。
+ */
 // @brief Turns the motor in one direction for a bit and then in the other
 // direction in order to find the offset between the electrical phase 0
 // and the encoder state 0.
@@ -339,6 +396,7 @@ bool Encoder::run_offset_calibration() {
         return false;
     }
 
+    /*我们使用 shadow_count_ 进行偏移校准，shadow_count_ 实际上会在编码器更新函数中更新，但为了及时性，在这里立即更新*/
     // We use shadow_count_ to do the calibration, but the offset is used by count_in_cpr_
     // Therefore we have to sync them for calibration
     shadow_count_ = count_in_cpr_;
@@ -407,11 +465,14 @@ bool Encoder::run_offset_calibration() {
         num_steps++;
         osDelay(1);
     }
+    /*由于定时中断更新编码器值的原因，所以 shadow_count_ 会持续更新，即使前面有死循环*/
 
+    /*shadow_count_ 会持续更新，shadow_count_  大于进入死循环前的暂存值说明在持续正转*/
     // Check response and direction
     if (shadow_count_ > init_enc_val + 8) {
         // motor same dir as encoder
         config_.direction = 1;
+    /*shadow_count_ 会持续更新，shadow_count_  小于于进入死循环前的暂存值说明在持续反转*/
     } else if (shadow_count_ < init_enc_val - 8) {
         // motor opposite dir as encoder
         config_.direction = -1;
@@ -462,6 +523,7 @@ bool Encoder::run_offset_calibration() {
     return true;
 }
 
+// 解码霍尔传感器的三位二进制数
 static bool decode_hall(uint8_t hall_state, int32_t* hall_cnt) {
     switch (hall_state) {
         case 0b001: *hall_cnt = 0; return true;
@@ -474,9 +536,11 @@ static bool decode_hall(uint8_t hall_state, int32_t* hall_cnt) {
     }
 }
 
+// 定时中断轮询采样编码器数据
 void Encoder::sample_now() {
     switch (mode_) {
         case MODE_INCREMENTAL: {
+            /*tim_cnt_sample_：指的是利用定时中断定时更新采集的编码器统计数*/
             tim_cnt_sample_ = (int16_t)timer_->Instance->CNT;
         } break;
 
@@ -519,6 +583,7 @@ bool Encoder::read_sampled_gpio(Stm32Gpio gpio) {
     return false;
 }
 
+// 读取霍尔传感器采样的三位二进制数
 void Encoder::decode_hall_samples() {
     hall_state_ = (read_sampled_gpio(hallA_gpio_) ? 1 : 0)
                 | (read_sampled_gpio(hallB_gpio_) ? 2 : 0)
@@ -626,6 +691,7 @@ void Encoder::abs_spi_cs_pin_init(){
     abs_spi_cs_gpio_.write(true);
 }
 
+// 霍尔传感器模式
 // Note that this may return counts +1 or -1 without any wrapping
 int32_t Encoder::hall_model(float internal_pos) {
     int32_t base_cnt = (int32_t)std::floor(internal_pos);
@@ -657,6 +723,9 @@ bool Encoder::update() {
         case MODE_INCREMENTAL: {
             //TODO: use count_in_cpr_ instead as shadow_count_ can overflow
             //or use 64 bit
+
+            /*tim_cnt_sample_：指的是利用定时中断定时更新采集的编码器统计数*/
+
             int16_t delta_enc_16 = (int16_t)tim_cnt_sample_ - (int16_t)shadow_count_;
             delta_enc = (int32_t)delta_enc_16; //sign extend
         } break;
@@ -759,12 +828,20 @@ bool Encoder::update() {
         } break;
     }
 
-    shadow_count_ += delta_enc;
-    count_in_cpr_ += delta_enc;
+    /*这里并不是将 tim_cnt_sample_ 值直接赋予给 count_in_cpr_ 变量，而是通过增量的形式更新*/
+    /*shadow_count_ 以及 count_in_cpr_ 在此同步更新*/
+    shadow_count_ += delta_enc; /*当前编码器值相比上一次编码器值的变化量*/
+    count_in_cpr_ += delta_enc; /*当前编码器值相比上一次编码器值的变化量*/
+    /*限值，将 count_in_cpr_ 限制到 config_.cpr 范围之内，例如限值为 4000*/
     count_in_cpr_ = mod(count_in_cpr_, config_.cpr);
 
     if(mode_ & MODE_FLAG_ABS)
         count_in_cpr_ = pos_abs_latched;
+
+    /*详细查看以下内容解读：*/
+    /*https://blog.csdn.net/loop222/article/details/133788966*/
+    /*https://zhuanlan.zhihu.com/p/665365512*/
+    /*https://blog.csdn.net/weixin_43824941/article/details/118739397*/
 
     // Memory for pos_circular
     float pos_cpr_counts_last = pos_cpr_counts_;
@@ -773,16 +850,27 @@ bool Encoder::update() {
     // Predict current pos
     pos_estimate_counts_ += current_meas_period * vel_estimate_counts_;
     pos_cpr_counts_      += current_meas_period * vel_estimate_counts_;
+
+    /*注意上面 vel_estimate_counts_ 没有被赋予初始值，所以默认为 0，
+    不赋予初始值是因为它可以随着时间的推移通过和实际值的误差积分逐渐的逼近正确值*/
+
     // Encoder model
     auto encoder_model = [this](float internal_pos)->int32_t {
         if (config_.mode == MODE_HALL)
             return hall_model(internal_pos);
         else
+            /*std::floor 对给定的浮点数（通常是 float 或 double 类型）执行向下取整操作，
+            即将数字舍去小数部分，返回小于或等于该数的最大整数值。*/
             return (int32_t)std::floor(internal_pos);
     };
-    // discrete phase detector
+    // discrete phase detector 即离散相位检波器（计算实际 shadow_count_，count_in_cpr_ 和各自估计值的差值）
     float delta_pos_counts = (float)(shadow_count_ - encoder_model(pos_estimate_counts_));
     float delta_pos_cpr_counts = (float)(count_in_cpr_ - encoder_model(pos_cpr_counts_));
+
+    /*wrap_pm() 使用 ARM 汇编语言实现的单精度浮点数到 32 位有符号整数的转换。
+    它利用了ARM处理器中的向量浮点单元(VFP)提供的VCVT指令来进行类型转换。
+    在这里将 delta_pos_cpr_counts / (float)(config_.cpr) 的浮点结果转化为带
+    符号的 32 位整数*/
     delta_pos_cpr_counts = wrap_pm(delta_pos_cpr_counts, (float)(config_.cpr));
     delta_pos_cpr_counts_ += 0.1f * (delta_pos_cpr_counts - delta_pos_cpr_counts_); // for debug
     // pll feedback
