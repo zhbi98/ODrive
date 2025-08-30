@@ -207,8 +207,9 @@ void Encoder::set_circular_count(int32_t count, bool update_offset) {
     uint32_t prim = cpu_enter_critical();
 
     if (update_offset) {
+        /*count - count_in_cpr_ 表示当前位置与上一次位置的差值,加到当前 offset 上去，就相当于把原始测量值重新对齐到这个 count 上*/
         config_.phase_offset += count - count_in_cpr_;
-        config_.phase_offset = mod(config_.phase_offset, config_.cpr);
+        config_.phase_offset = mod(config_.phase_offset, config_.cpr); /*最后对 offset 做模运算，确保它始终在 [0, cpr) 范围内。*/
     }
 
     // Update states
@@ -223,8 +224,9 @@ void Encoder::set_circular_count(int32_t count, bool update_offset) {
 bool Encoder::run_index_search() {
     config_.use_index = true;
     index_found_ = false;
-    set_idx_subscribe();
+    set_idx_subscribe(); /*实际就是开启 GPIO 中断，订阅 Index 脉冲（也就是 enc_index_cb()）*/
 
+    /*调用电机控制逻辑，让电机按 lockin 策略缓慢加速旋转，直到触发 Index 或达到预设条件。*/
     bool success = axis_->run_lockin_spin(axis_->config_.calibration_lockin, false);
     return success;
 }
@@ -385,7 +387,7 @@ bool Encoder::run_hall_phase_calibration() {
 bool Encoder::run_offset_calibration() {
     const float start_lock_duration = 1.0f;
 
-    // Require index found if enabled
+    // Require index found if enabled（检查是否找到 Index 不然报错返回）
     if (config_.use_index && !index_found_) {
         set_error(ERROR_INDEX_NOT_FOUND_YET);
         return false;
@@ -455,7 +457,7 @@ bool Encoder::run_offset_calibration() {
         axis_->open_loop_controller_.total_distance_ = 0.0f;
     }
 
-    // scan forward
+    // scan forward（正向电角扫描:在电角度空间匀速旋转一次（扇区），采样 encoder 输出并累加）
     while ((axis_->requested_state_ == Axis::AXIS_STATE_UNDEFINED) && axis_->motor_.is_armed_) {
         bool reached_target_dist = axis_->open_loop_controller_.total_distance_.any().value_or(-INFINITY) >= config_.calib_scan_distance;
         if (reached_target_dist) {
@@ -482,6 +484,9 @@ bool Encoder::run_offset_calibration() {
         axis_->motor_.disarm();
         return false;
     }
+
+    /*CPR 验证,超重要逻辑：确认你设定的 CPR 和电机 极对数 是否一致*/
+    /*防止你设错配置，比如把编码器 CPR 设成了 2048 实际是 8192*/
 
     // Check CPR
     float elec_rad_per_enc = axis_->motor_.config_.pole_pairs * 2 * M_PI * (1.0f / (float)(config_.cpr));
@@ -515,6 +520,8 @@ bool Encoder::run_offset_calibration() {
 
     axis_->motor_.disarm();
 
+    /*偏移计算:取中值作为编码器偏移位置（相对于电角度中心）*/
+    /*offset_float是子采样补偿（防止小误差导致 jitter）*/
     config_.phase_offset = encvaluesum / num_steps;
     int32_t residual = encvaluesum - ((int64_t)config_.phase_offset * (int64_t)num_steps);
     config_.phase_offset_float = (float)residual / (float)num_steps + 0.5f;  // add 0.5 to center-align state to phase
@@ -539,7 +546,7 @@ static bool decode_hall(uint8_t hall_state, int32_t* hall_cnt) {
 // 定时中断轮询采样编码器数据
 void Encoder::sample_now() {
     switch (mode_) {
-        case MODE_INCREMENTAL: {
+        case MODE_INCREMENTAL: { /*增量式编码器，通过定时器计数更新位置*/
             /*tim_cnt_sample_：指的是利用定时中断定时更新采集的编码器统计数*/
             tim_cnt_sample_ = (int16_t)timer_->Instance->CNT;
         } break;
@@ -548,11 +555,12 @@ void Encoder::sample_now() {
             // do nothing: samples already captured in general GPIO capture
         } break;
 
-        case MODE_SINCOS: {
+        case MODE_SINCOS: { /*正弦/余弦模拟信号编码器*/
             sincos_sample_s_ = get_adc_relative_voltage(get_gpio(config_.sincos_gpio_pin_sin)) - 0.5f;
             sincos_sample_c_ = get_adc_relative_voltage(get_gpio(config_.sincos_gpio_pin_cos)) - 0.5f;
         } break;
 
+        /*多种 SPI 接口的绝对式编码器（AMS、CUI、RLS、AEAT）*/
         case MODE_SPI_ABS_AMS:
         case MODE_SPI_ABS_CUI:
         case MODE_SPI_ABS_AEAT:
@@ -638,6 +646,7 @@ void Encoder::abs_spi_cb(bool success) {
             if (ams_parity(rawVal) || ((rawVal >> 14) & 1)) {
                 goto done;
             }
+            /*第 14 位是 错误标志（1 = error) 第 15 位是 偶校验 低 14 位是实际角度*/
             pos = rawVal & 0x3fff;
         } break;
 
@@ -647,11 +656,13 @@ void Encoder::abs_spi_cb(bool success) {
             if (cui_parity(rawVal)) {
                 goto done;
             }
+            /*低 14 位为角度值，其余为奇偶校验*/
             pos = rawVal & 0x3fff;
         } break;
 
         case MODE_SPI_ABS_RLS: {
             uint16_t rawVal = abs_spi_dma_rx_[0];
+            /*数据右移两位，直接取中间 14 位为角度*/
             pos = (rawVal >> 2) & 0x3fff;
         } break;
 
@@ -846,6 +857,8 @@ bool Encoder::update() {
     // Memory for pos_circular
     float pos_cpr_counts_last = pos_cpr_counts_;
 
+    /*锁相环 PLL 滤波器：用于平滑位置和速度估计，关键参数为 pll_kp_、pll_ki_。*/
+    /*如果速度估计很小，还会自动 snap 到 0，防止抖动。*/
     //// run pll (for now pll is in units of encoder counts)
     // Predict current pos
     pos_estimate_counts_ += current_meas_period * vel_estimate_counts_;
@@ -863,7 +876,7 @@ bool Encoder::update() {
             即将数字舍去小数部分，返回小于或等于该数的最大整数值。*/
             return (int32_t)std::floor(internal_pos);
     };
-    // discrete phase detector 即离散相位检波器（计算实际 shadow_count_，count_in_cpr_ 和各自估计值的差值）
+    // discrete phase detector 即离散相位检波器（计算实际 shadow_count_，count_in_cpr_ 和各自估计值的差值）或理解为计算位置误差（离散检测器）:比较预测位置与实际编码器值的差值。
     float delta_pos_counts = (float)(shadow_count_ - encoder_model(pos_estimate_counts_));
     float delta_pos_cpr_counts = (float)(count_in_cpr_ - encoder_model(pos_cpr_counts_));
 
@@ -873,12 +886,21 @@ bool Encoder::update() {
     符号的 32 位整数*/
     delta_pos_cpr_counts = wrap_pm(delta_pos_cpr_counts, (float)(config_.cpr));
     delta_pos_cpr_counts_ += 0.1f * (delta_pos_cpr_counts - delta_pos_cpr_counts_); // for debug
+
+    /**ODrive 中使用的是一个 简化的一阶数字 PLL（锁相环）结构，核心任务是：
+    利用 编码器读数（离散跳变）估算连续相位，利用估算相位变化量，推算 电机的角速度。*/
+
+    /*PLL 反馈：修正位置和速度*/
+    /*这是典型的 PI 控制结构，模仿锁相环的思想：位置偏差 -> 修正估计位置（P）,位置偏差积分 -> 修正速度估计（I）*/
+    /*这样既能保证跟踪精度，也具备一定滤波特性，抗抖动。*/
+
     // pll feedback
     pos_estimate_counts_ += current_meas_period * pll_kp_ * delta_pos_counts;
     pos_cpr_counts_ += current_meas_period * pll_kp_ * delta_pos_cpr_counts;
     pos_cpr_counts_ = fmodf_pos(pos_cpr_counts_, (float)(config_.cpr));
     vel_estimate_counts_ += current_meas_period * pll_ki_ * delta_pos_cpr_counts;
     bool snap_to_zero_vel = false;
+    /*慢速防抖 snap-to-zero*/
     if (std::abs(vel_estimate_counts_) < 0.5f * current_meas_period * pll_ki_) {
         vel_estimate_counts_ = 0.0f;  //align delta-sigma on zero to prevent jitter
         snap_to_zero_vel = true;
@@ -896,17 +918,19 @@ bool Encoder::update() {
     pos_circular = fmodf_pos(pos_circular, axis_->controller_.config_.circular_setpoint_range);
     pos_circular_ = pos_circular;
 
+    /*编码器插值（用于高分辨率控制):对于增量编码器，跳变是离散的（如每 1 tick 才有更新）*/
+    /*插值 = 利用估计速度进行线性推测，补足跳变之间的空白*/
     //// run encoder count interpolation
     int32_t corrected_enc = count_in_cpr_ - config_.phase_offset;
     // if we are stopped, make sure we don't randomly drift
     if (snap_to_zero_vel || !config_.enable_phase_interpolation) {
-        interpolation_ = 0.5f;
+        interpolation_ = 0.5f; /*静止*/
     // reset interpolation if encoder edge comes
     // TODO: This isn't correct. At high velocities the first phase in this count may very well not be at the edge.
     } else if (delta_enc > 0) {
-        interpolation_ = 0.0f;
+        interpolation_ = 0.0f; /*刚跳变（+1）*/
     } else if (delta_enc < 0) {
-        interpolation_ = 1.0f;
+        interpolation_ = 1.0f; /*刚跳变（-1）*/
     } else {
         // Interpolate (predict) between encoder counts using vel_estimate,
         interpolation_ += current_meas_period * vel_estimate_counts_;
@@ -914,8 +938,9 @@ bool Encoder::update() {
         if (interpolation_ > 1.0f) interpolation_ = 1.0f;
         if (interpolation_ < 0.0f) interpolation_ = 0.0f;
     }
-    float interpolated_enc = corrected_enc + interpolation_;
+    float interpolated_enc = corrected_enc + interpolation_; /*最后得到一个更平滑的 interpolated_enc 用于电角度等计算*/
 
+    /*电角度计算（电机控制核心）:电角度 phase_ 是控制电机所需的核心变量，使用插值后的编码器位置计算得到。*/
     //// compute electrical phase
     //TODO avoid recomputing elec_rad_per_enc every time
     float elec_rad_per_enc = axis_->motor_.config_.pole_pairs * 2 * M_PI * (1.0f / (float)(config_.cpr));

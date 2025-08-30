@@ -77,7 +77,7 @@ OnboardThermistorCurrentLimiter fet_thermistors[AXIS_COUNT] = {
 
 OffboardThermistorCurrentLimiter motor_thermistors[AXIS_COUNT];
 
-Motor motors[AXIS_COUNT] = {
+Motor motors[AXIS_COUNT] = { /*定义电机*/
     {
         &htim1, // timer
         0b110, // current_sensor_mask
@@ -122,7 +122,7 @@ Endstop endstops[2 * AXIS_COUNT];
 MechanicalBrake mechanical_brakes[AXIS_COUNT];
 
 SensorlessEstimator sensorless_estimators[AXIS_COUNT];
-Controller controllers[AXIS_COUNT];
+Controller controllers[AXIS_COUNT]; /*定义控制器*/
 TrapezoidalTrajectory trap[AXIS_COUNT];
 
 std::array<Axis, AXIS_COUNT> axes{{

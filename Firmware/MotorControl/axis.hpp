@@ -17,6 +17,8 @@ class Axis;
 
 #include <array>
 
+/**构造一个完整的电机轴控制系统，包含电机对象、编码器对象、
+ * 控制器 Controller 对象，温度监控等模块。*/
 class Axis : public ODriveIntf::AxisIntf {
 public:
     struct LockinConfig_t {

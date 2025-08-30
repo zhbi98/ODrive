@@ -33,10 +33,18 @@ void Controller::move_to_pos(float goal_point) {
                                  axis_->trap_traj_.config_.vel_limit,
                                  axis_->trap_traj_.config_.accel_limit,
                                  axis_->trap_traj_.config_.decel_limit);
+
+    /**规划梯形加减速运动轨迹，这个函数会使用梯形速度轨迹（Trapezoidal Trajectory）规划器，
+     * 从当前位置移动到目标点 goal_point，并设置状态让控制器开始执行轨迹。*/
     axis_->trap_traj_.t_ = 0.0f;
     trajectory_done_ = false;
 }
 
+/**
+ * 这个函数的作用是：相对于当前位置或当前设定值 pos_setpoint_，
+ * 增量移动一个 displacement 距离；然后调用 input_pos_updated()，
+ * 让控制器根据新的目标位置，开始执行新的轨迹或控制过程。
+ */
 void Controller::move_incremental(float displacement, bool from_input_pos = true){
     if(from_input_pos){
         input_pos_ += displacement;
@@ -77,19 +85,30 @@ float Controller::remove_anticogging_bias()
  * This holding current is added as a feedforward term in the control loop.
  */
 bool Controller::anticogging_calibration(float pos_estimate, float vel_estimate) {
-    float pos_err = input_pos_ - pos_estimate;
+
+    /**
+     * 这段代码是 ODrive 固件中的一个关键函数，用于抗齿槽效应（Anti-Cogging）校准，
+     * 是高级电机控制中常用的补偿机制之一。抗齿槽效应（Anti-Cogging）是在电机静止或低速时，
+     * 转子有细微卡滞，会导致运动不平滑，特别是在低速精密控制时很明显。
+     */
+
+    float pos_err = input_pos_ - pos_estimate; /*计算当前电机位置和设定位置之间的误差。希望它越接近 0 越好，表示电机已经稳定在期望位置。*/
     if (std::abs(pos_err) <= config_.anticogging.calib_pos_threshold / (float)axis_->encoder_.config_.cpr &&
         std::abs(vel_estimate) < config_.anticogging.calib_vel_threshold / (float)axis_->encoder_.config_.cpr) {
+        /*把当前位置所需的积分电流（即维持当前位置的扭矩）保存到 `cogging_map` 中,每执行一次这个函数，就测量一个点（`index` 代表当前点）,`std::clamp` 防止越界（限制 index 在 0~3600 之间）*/
         config_.anticogging.cogging_map[std::clamp<uint32_t>(config_.anticogging.index++, 0, 3600)] = vel_integrator_torque_;
     }
     if (config_.anticogging.index < 3600) {
+        /*接下来设置下一个采样点，让电机移动到新的位置点继续采样*/
         config_.control_mode = CONTROL_MODE_POSITION_CONTROL;
         input_pos_ = config_.anticogging.index * axis_->encoder_.getCoggingRatio();
+        /*清空速度、力矩输入（表示只靠位置控制）*/
         input_vel_ = 0.0f;
         input_torque_ = 0.0f;
         input_pos_updated();
         return false;
     } else {
+        /*当所有点采样完毕：重置 index,把电机回零（归位）,标记 `anticogging_valid_ = true` 表示数据可用,关闭校准模式标志*/
         config_.anticogging.index = 0;
         config_.control_mode = CONTROL_MODE_POSITION_CONTROL;
         input_pos_ = 0.0f;  // Send the motor home
@@ -127,20 +146,26 @@ bool Controller::control_mode_updated() {
     return true;
 }
 
-
+/*更新输入滤波器的参数（带宽 → PID 系数）,根据设定的带宽更新输入滤波器的 kp 和 ki 系数，以便输入信号平滑处理。*/
 void Controller::update_filter_gains() {
+    /*设定一个最大允许的滤波带宽，不能超过采样率的四分之一（Nyquist 准则的变种）,current_meas_hz 是当前电流采样频率（控制回路频率，单位 Hz）,input_filter_bandwidth 是配置中允许的最大滤波带宽*/
     float bandwidth = std::min(config_.input_filter_bandwidth, 0.25f * current_meas_hz);
-    input_filter_ki_ = 2.0f * bandwidth;  // basic conversion to discrete time
-    input_filter_kp_ = 0.25f * (input_filter_ki_ * input_filter_ki_); // Critically damped
+    input_filter_ki_ = 2.0f * bandwidth;  // basic conversion to discrete time（离散时间下的积分增益:假设使用一阶低通滤波器设计形式，2×带宽是常用近似）
+    input_filter_kp_ = 0.25f * (input_filter_ki_ * input_filter_ki_); // Critically damped（等价于设置滤波器为无振荡、快速响应的平稳系统）
 }
 
+/*速度限制函数，用于限制速度相关的扭矩指令大小，防止速度过冲或抖动。*/
 static float limitVel(const float vel_limit, const float vel_estimate, const float vel_gain, const float torque) {
+    /*动态计算的扭矩上下限:当 vel_estimate 靠近 vel_limit 时，Tmax 减小，防止继续加速,当速度超限时，Tmax 甚至为负，形成刹车力矩*/
     float Tmax = (vel_limit - vel_estimate) * vel_gain;
     float Tmin = (-vel_limit - vel_estimate) * vel_gain;
+    /*把输入 torque 限制在 Tmin ~ Tmax 范围内*/
     return std::clamp(torque, Tmin, Tmax);
 }
 
+/*这是控制核心逻辑的心脏部分，主要完成从输入指令->内部处理->生成最终力矩指令（torque setpoint）的全过程。*/
 bool Controller::update() {
+    /**实时获取并验证电机位置/速度估计值（获取估计值来源:先检查 encoder 提供的位置/速度估计是否有效,如果有效则用对应的估计源）*/
     std::optional<float> pos_estimate_linear = pos_estimate_linear_src_.present();
     std::optional<float> pos_estimate_circular = pos_estimate_circular_src_.present();
     std::optional<float> pos_wrap = pos_wrap_src_.present();
@@ -149,6 +174,7 @@ bool Controller::update() {
     std::optional<float> anticogging_pos_estimate = axis_->encoder_.pos_estimate_.present();
     std::optional<float> anticogging_vel_estimate = axis_->encoder_.vel_estimate_.present();
 
+    /**对环形运动范围等关键参数进行非空校验*/
     if (axis_->step_dir_active_) {
         if (config_.circular_setpoints) {
             if (!pos_wrap.has_value()) {
@@ -176,20 +202,21 @@ bool Controller::update() {
             set_error(ERROR_INVALID_CIRCULAR_RANGE);
             return false;
         }
+        /*使 input_pos_ 保持在 0~360（或指定范围）以内，避免角度漂移*/
         input_pos_ = fmodf_pos(input_pos_, *pos_wrap);
     }
 
-    // Update inputs
+    // Update inputs, 输入模式处理（每种模式有独立的速度/位置/扭矩计算逻辑）
     switch (config_.input_mode) {
         case INPUT_MODE_INACTIVE: {
             // do nothing
         } break;
-        case INPUT_MODE_PASSTHROUGH: {
+        case INPUT_MODE_PASSTHROUGH: { /*直接传入输入值作为目标*/
             pos_setpoint_ = input_pos_;
             vel_setpoint_ = input_vel_;
             torque_setpoint_ = input_torque_; 
         } break;
-        case INPUT_MODE_VEL_RAMP: {
+        case INPUT_MODE_VEL_RAMP: { /*速度斜坡计算，限制速度的变化率*/
             float max_step_size = std::abs(current_meas_period * config_.vel_ramp_rate);
             float full_step = input_vel_ - vel_setpoint_;
             float step = std::clamp(full_step, -max_step_size, max_step_size);
@@ -197,14 +224,14 @@ bool Controller::update() {
             vel_setpoint_ += step;
             torque_setpoint_ = (step / current_meas_period) * config_.inertia;
         } break;
-        case INPUT_MODE_TORQUE_RAMP: {
+        case INPUT_MODE_TORQUE_RAMP: { /*力矩斜坡计算，限制扭矩变化率*/
             float max_step_size = std::abs(current_meas_period * config_.torque_ramp_rate);
             float full_step = input_torque_ - torque_setpoint_;
             float step = std::clamp(full_step, -max_step_size, max_step_size);
 
             torque_setpoint_ += step;
         } break;
-        case INPUT_MODE_POS_FILTER: {
+        case INPUT_MODE_POS_FILTER: { /*二阶位置跟踪滤波器，平滑输入位置*/
             // 2nd order pos tracking filter
             float delta_pos = input_pos_ - pos_setpoint_; // Pos error
             if (config_.circular_setpoints) {
@@ -220,7 +247,7 @@ bool Controller::update() {
             vel_setpoint_ += current_meas_period * accel; // delta vel
             pos_setpoint_ += current_meas_period * vel_setpoint_; // Delta pos
         } break;
-        case INPUT_MODE_MIRROR: {
+        case INPUT_MODE_MIRROR: { /*镜像另一个轴的状态*/
             if (config_.axis_to_mirror < AXIS_COUNT) {
                 std::optional<float> other_pos = axes[config_.axis_to_mirror].encoder_.pos_estimate_.present();
                 std::optional<float> other_vel = axes[config_.axis_to_mirror].encoder_.vel_estimate_.present();
@@ -242,7 +269,7 @@ bool Controller::update() {
         // case INPUT_MODE_MIX_CHANNELS: {
         //     // NOT YET IMPLEMENTED
         // } break;
-        case INPUT_MODE_TRAP_TRAJ: {
+        case INPUT_MODE_TRAP_TRAJ: { /*梯形轨迹规划控制（加减速规划）*/
             if(input_pos_updated_){
                 move_to_pos(input_pos_);
                 input_pos_updated_ = false;
@@ -322,13 +349,13 @@ bool Controller::update() {
         }
     }
 
-    // Velocity limiting
+    // Velocity limiting（限速，超速检测）
     float vel_lim = config_.vel_limit;
     if (config_.enable_vel_limit) {
         vel_des = std::clamp(vel_des, -vel_lim, vel_lim);
     }
 
-    // Check for overspeed fault (done in this module (controller) for cohesion with vel_lim)
+    // Check for overspeed fault (done in this module (controller) for cohesion with vel_lim)（如果速度估计超过容忍阈值 → 报错中断）
     if (config_.enable_overspeed_error) {  // 0.0f to disable
         if (!vel_estimate.has_value()) {
             set_error(ERROR_INVALID_ESTIMATE);
@@ -358,6 +385,9 @@ bool Controller::update() {
     // Velocity control
     float torque = torque_setpoint_;
 
+    /**Anti-cogging: 校准后启用防齿槽，我们获取当前位置并应用当前前馈，
+    确保我们正确处理负编码器位置 (-1 == motor->encoder.encoder_cpr - 1)*/
+
     // Anti-cogging is enabled after calibration
     // We get the current position and apply a current feed-forward
     // ensuring that we handle negative encoder positions properly (-1 == motor->encoder.encoder_cpr - 1)
@@ -370,6 +400,7 @@ bool Controller::update() {
         torque += config_.anticogging.cogging_map[std::clamp(mod((int)anticogging_pos, 3600), 0, 3600)];
     }
 
+    /**转速闭环控制 & 抗齿槽力补偿*/
     float v_err = 0.0f;
     if (config_.control_mode >= CONTROL_MODE_VELOCITY_CONTROL) {
         if (!vel_estimate.has_value()) {
