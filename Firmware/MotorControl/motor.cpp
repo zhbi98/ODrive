@@ -193,6 +193,7 @@ Motor::Motor(TIM_HandleTypeDef* timer,
  * @returns: True on success, false otherwise
  */
 bool Motor::arm(PhaseControlLaw<3>* control_law) {
+    /*重置位置/速度环控制器（如清空PID积分器）等等*/
     axis_->mechanical_brake_.release();
 
     CRITICAL_SECTION() {
@@ -290,6 +291,16 @@ bool Motor::disarm(bool* p_was_armed) {
 
     return true;
 }
+
+/*
+ * ODrive 电流环控制器参数（PID 增益）的自动调谐逻辑。它基于电机的 相电阻（phase resistance） 和 相电感（phase inductance） 
+ * 动态计算电流环的 比例增益（P gain） 和 积分增益（I gain）。这是 ODrive 实现 高性能电流控制 的关键部分。
+ * 根据电机参数（phase_inductance 和 phase_resistance）和控制带宽（current_control_bandwidth），
+ * 自动计算电流环的 P 增益 和 I 增益。这是一种基于模型的控制器调参（Model-Based Tuning），确保电流环的动态响应最优。
+ * 当电机相电阻（phase_resistance） 或 相电感（phase_inductance） 
+ * 发生变化时调用（例如温度变化导致电阻变化，或更换电机后参数不同）。 
+ * 详细可查看：https://blog.csdn.net/MOS_JBET/article/details/147070157
+ */
 
 // @brief Tune the current controller based on phase resistance and inductance
 // This should be invoked whenever one of these values changes.
@@ -406,9 +417,15 @@ bool Motor::do_checks(uint32_t timestamp) {
     return true;
 }
 
+/**
+ * 计算电机实际电流限制（effective current limit）的函数，
+ * 它综合了多个限制因素（配置值、硬件能力、电压限制等），确保电流控制既满足用户需求，
+ * 又不会超出系统安全范围。计算电机运行时允许的 实时最大电流值（单位：A）。
+ * 详细可查看：https://blog.csdn.net/MOS_JBET/article/details/147070310
+ */
 float Motor::effective_current_lim() {
     // Configured limit
-    float current_lim = config_.current_lim;
+    float current_lim = config_.current_lim; /*这实际就是用户设定的电流限制（如30A）*/
     // Hardware limit
     if (axis_->motor_.config_.motor_type == Motor::MOTOR_TYPE_GIMBAL) {
         current_lim = std::min(current_lim, 0.98f*one_by_sqrt3*vbus_voltage); //gimbal motor is voltage control
@@ -438,6 +455,7 @@ float Motor::max_available_torque() {
     }
 }
 
+/*将 ADC 原始值转换为电机相电流（单位：安培）的核心函数，主要用于电流采样信号的处理。*/
 std::optional<float> Motor::phase_current_from_adcval(uint32_t ADCValue) {
     // Make sure the measurements don't come too close to the current sensor's hardware limitations
     if (ADCValue < CURRENT_ADC_LOWER_BOUND || ADCValue > CURRENT_ADC_UPPER_BOUND) {
@@ -445,8 +463,9 @@ std::optional<float> Motor::phase_current_from_adcval(uint32_t ADCValue) {
         return std::nullopt;
     }
 
+    /*去除ADC偏置（硬件零漂） 1<<11 = 2048 将原始 ADC 值转换为 有符号数（-2048~+2047），代表电流方向（正/负）。*/
     int adcval_bal = (int)ADCValue - (1 << 11);
-    float amp_out_volt = (3.3f / (float)(1 << 12)) * (float)adcval_bal;
+    float amp_out_volt = (3.3f / (float)(1 << 12)) * (float)adcval_bal; /*转换为放大器输出电压*/
     float shunt_volt = amp_out_volt * phase_current_rev_gain_;
     float current = shunt_volt * shunt_conductance_;
     return current;
@@ -455,6 +474,13 @@ std::optional<float> Motor::phase_current_from_adcval(uint32_t ADCValue) {
 //--------------------------------
 // Measurement and calibration
 //--------------------------------
+
+/**
+ * 用于测量电机相电阻（phase resistance）的函数，通过注入测试电流并测量电压降来计算电阻值。
+ * 作用：动态测量电机相电阻（单位：Ω），用于自动校准或故障检测。
+ * 输入参数：test_current：测试电流幅值（如5A）。max_voltage：允许的最大测试电压（防止过压损坏）。
+ * 输出：true：测量成功，结果存入 config_.phase_resistance。false：测量失败（错误码记录在 axis_->error_）。
+ */
 
 // TODO check Ibeta balance to verify good motor connection
 bool Motor::measure_phase_resistance(float test_current, float max_voltage) {
@@ -497,7 +523,12 @@ bool Motor::measure_phase_resistance(float test_current, float max_voltage) {
     return success;
 }
 
-
+/**
+ * 用于测量电机相电感（phase inductance）的函数，通过施加交变电压并测量电流变化率来计算电感值。
+ * 作用：动态测量电机相电感（单位：H），用于电机参数自动辨识。
+ * 输入参数：voltage_low：低电平测试电压（如-5V）voltage_high：高电平测试电压（如+5V）
+ * 输出：true：测量成功，结果存入 config_.phase_inductance，false：测量失败（错误码记录在 axis_->error_）
+ */
 bool Motor::measure_phase_inductance(float test_voltage) {
     InductanceMeasurementControlLaw control_law;
     control_law.test_voltage_ = test_voltage;

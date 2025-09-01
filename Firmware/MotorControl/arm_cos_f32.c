@@ -107,6 +107,8 @@ float32_t our_arm_cos_f32(
   /* fractional value calculation */
   fract = findex - (float32_t) index;
 
+  /*正弦函数一个周期（[0, 2π]）的离散采样值。*/
+
   /* Read two nearest values of input value from the cos table */
   a = sinTable_f32[index];
   b = sinTable_f32[index+1];

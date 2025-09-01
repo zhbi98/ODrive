@@ -164,12 +164,16 @@ bool Axis::do_checks(uint32_t timestamp) {
 
 // @brief Feed the watchdog to prevent watchdog timeouts.
 void Axis::watchdog_feed() {
+    /*返回的是一个固定值（例如 1000），代表你设定的容忍超时周期数。*/
     watchdog_current_value_ = get_watchdog_reset();
 }
 
 // @brief Check the watchdog timer for expiration. Also sets the watchdog error bit if expired.
 bool Axis::watchdog_check() {
     if (!config_.enable_watchdog) return true;
+
+    /*如果 watchdog_current_value_ 变成 0，就说明你很久没有调用 watchdog_feed()。
+    在这种情况下系统会设置 ERROR_WATCHDOG_TIMER_EXPIRED，可能进入错误处理或强制停止电机。*/
 
     // explicit check here to ensure that we don't underflow back to UINT32_MAX
     if (watchdog_current_value_ > 0) {
@@ -181,6 +185,13 @@ bool Axis::watchdog_check() {
     }
 }
 
+/*
+ * 这段代码实现了ODrive电机控制中的 "锁定旋转" (Lock-in Spin) 功能，主要用于电机启动时的转子位置识别和速度同步。
+ * Lock-in Spin是电机启动时的关键过程，它通过三个阶段让电机从静止状态平滑过渡到目标速度：
+ * 电流斜坡上升阶段（Ramp）
+ * 加速阶段（Accelerate）
+ * 恒速阶段（Constant Velocity）
+ */
 bool Axis::run_lockin_spin(const LockinConfig_t &lockin_config, bool remain_armed,
         std::function<bool(bool)> loop_cb) {
     CRITICAL_SECTION() {
@@ -253,7 +264,7 @@ bool Axis::run_lockin_spin(const LockinConfig_t &lockin_config, bool remain_arme
     return success;
 }
 
-
+/*ODrive的闭环控制主循环，是带编码器反馈的精确位置/速度控制的核心。*/
 bool Axis::start_closed_loop_control() {
     bool sensorless_mode = config_.enable_sensorless_mode;
 
@@ -451,6 +462,13 @@ bool Axis::run_idle_loop() {
     return check_for_errors();
 }
 
+/**
+ * 实现了ODrive电机轴的状态机主循环，是控制系统任务调度的核心。该状态机实现了：
+ * 多任务链式执行：支持启动序列、全校准序列等复杂流程
+ * 11种轴状态处理：包括校准、回零、闭环控制等
+ * 错误恢复机制：自动降级到空闲状态
+ * 状态过渡管理：确保模式切换的安全性
+ */
 // Infinite loop that does calibration and enters main control loop as appropriate
 void Axis::run_state_machine_loop() {
     for (;;) {
