@@ -84,9 +84,12 @@ void StatusLedController::update() {
 }
 
 static bool config_read_all() {
+    /**从 NVM (芯片 Flash) 中加载 (读取) '板载配置参数' 到指定的各个结构体对象指针（内存）中。*/
     bool success = board_read_config() &&
            config_manager.read(&odrv.config_) &&
            config_manager.read(&odrv.can_.config_);
+
+    /**从 NVM (芯片 Flash) 中加载 (读取) '电机配置参数' 到指定的各个结构体对象指针（内存）中。*/
     for (size_t i = 0; (i < AXIS_COUNT) && success; ++i) {
         success = config_manager.read(&encoders[i].config_) &&
                   config_manager.read(&axes[i].sensorless_estimator_.config_) &&
@@ -124,6 +127,7 @@ static bool config_write_all() {
 }
 
 static void config_clear_all() {
+    /**清除 NVM (芯片 Flash) 中的各类配置参数并给各个结构体对象赋予默认值*/
     odrv.config_ = {};
     odrv.can_.config_ = {};
     for (size_t i = 0; i < AXIS_COUNT; ++i) {
@@ -659,6 +663,11 @@ extern "C" int main(void) {
 
     // Init low level system functions (clocks, flash interface)
     system_init();
+
+    /**
+     * 从 NVM (芯片 Flash) 中加载 (读取) 电机配置参数。由于闪存接口在 board_init() 初始化，
+     * 所以要求读取配置要在 system_init() 函数之后调用。
+     */
 
     // Load configuration from NVM. This needs to happen after system_init()
     // since the flash interface must be initialized and before board_init()

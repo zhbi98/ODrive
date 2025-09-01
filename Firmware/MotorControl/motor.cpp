@@ -292,9 +292,9 @@ bool Motor::disarm(bool* p_was_armed) {
     return true;
 }
 
-/*
- * ODrive 电流环控制器参数（PID 增益）的自动调谐逻辑。它基于电机的 相电阻（phase resistance） 和 相电感（phase inductance） 
- * 动态计算电流环的 比例增益（P gain） 和 积分增益（I gain）。这是 ODrive 实现 高性能电流控制 的关键部分。
+/**
+ * 电流环控制器参数（PID 增益）的自动调谐逻辑。它基于电机的 相电阻（phase resistance） 和相电感（phase inductance） 
+ * 动态计算电流环的 比例增益（P-gain）和积分增益（I-gain）。这是 ODrive 实现 高性能电流控制的关键部分。
  * 根据电机参数（phase_inductance 和 phase_resistance）和控制带宽（current_control_bandwidth），
  * 自动计算电流环的 P 增益 和 I 增益。这是一种基于模型的控制器调参（Model-Based Tuning），确保电流环的动态响应最优。
  * 当电机相电阻（phase_resistance） 或 相电感（phase_inductance） 
@@ -352,13 +352,15 @@ bool Motor::setup() {
     // Solve for exact gain, then snap down to have equal or larger range as requested
     // or largest possible range otherwise
     constexpr float kMargin = 0.90f;
-    constexpr float max_output_swing = 1.35f; // [V] out of amplifier，即最大输出摆幅 1.35V，也就是说经过运放放大 x 倍后的最大输出电压因该在 1.35V 之间。
-    /*详细来说就是当采样电阻流过最大设计电流（例如60A）时在采样电阻两端可以产生最大分压，而这个分压经过运放放大 x 倍后的最大输出电压因该在 1.35V 之间。*/
+    /*1.35f 即最大输出摆幅 1.35V，也就是说经过运放放大 x 倍后的最大输出电压因该在 1.35V 之间。
+    详细来说就是当采样电阻流过最大设计电流（例如60A）时在采样电阻两端可以产生最大分压，
+    而这个分压经过运放放大 x 倍后的最大输出电压因该在 1.35V 之间。*/
+    constexpr float max_output_swing = 1.35f; // [V] out of amplifier
     float max_unity_gain_current = kMargin * max_output_swing * shunt_conductance_; // [A]
     float requested_gain = max_unity_gain_current / config_.requested_current_range; // [V/V]
     
     /**
-     * 为什么 float max_unity_gain_current = kMargin * max_output_swing * shunt_conductance_;  会得到电流值？
+     * 为什么 float max_unity_gain_current = kMargin * max_output_swing * shunt_conductance_; 会得到电流值？
      * 
      * 在这段代码中，max_unity_gain_current的计算实际上是在确定放大器输出在最大摆幅时，通过分流电阻（shunt resistor）能够产生的最大电流。这里的“单位增益”（unity gain）并不是直接指放大器的增益为1，而是用于描述一种情况，即放大器的输出在其最大摆幅时，对应到分流电阻上的电流情况。
      * 然而，这里的命名可能会有些误导。通常，单位增益指的是放大器增益为1的情况，但在这里，它更像是用来描述在不超出放大器最大输出能力的前提下，通过分流电阻可能达到的最大电流。
@@ -481,7 +483,6 @@ std::optional<float> Motor::phase_current_from_adcval(uint32_t ADCValue) {
  * 输入参数：test_current：测试电流幅值（如5A）。max_voltage：允许的最大测试电压（防止过压损坏）。
  * 输出：true：测量成功，结果存入 config_.phase_resistance。false：测量失败（错误码记录在 axis_->error_）。
  */
-
 // TODO check Ibeta balance to verify good motor connection
 bool Motor::measure_phase_resistance(float test_current, float max_voltage) {
     ResistanceMeasurementControlLaw control_law;
@@ -585,6 +586,7 @@ bool Motor::run_calibration() {
     return true;
 }
 
+/*电机控制主函数中的一环，负责将期望的扭矩转换为电流指令，并调用适当的 FOC（磁场定向控制）函数控制电机。*/
 void Motor::update(uint32_t timestamp) {
     // Load torque setpoint, convert to motor direction
     std::optional<float> maybe_torque = torque_setpoint_src_.present();
@@ -600,6 +602,7 @@ void Motor::update(uint32_t timestamp) {
     // Load effective current limit
     float ilim = axis_->motor_.effective_current_lim_;
 
+    /*扭矩转电流,对 BLDC、PMSM 电机而言直接除以力矩常数即可，ACIM 中分母还要乘以rotor_flux（磁链）。*/
     // Autoflux tracks old Iq (that may be 2-norm clamped last cycle) to make sure we are chasing a feasable current.
     if ((axis_->motor_.config_.motor_type == Motor::MOTOR_TYPE_ACIM) && config_.acim_autoflux_enable) {
         float abs_iq = std::abs(iq);

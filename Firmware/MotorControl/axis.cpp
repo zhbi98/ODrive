@@ -185,7 +185,7 @@ bool Axis::watchdog_check() {
     }
 }
 
-/*
+/**
  * 这段代码实现了ODrive电机控制中的 "锁定旋转" (Lock-in Spin) 功能，主要用于电机启动时的转子位置识别和速度同步。
  * Lock-in Spin是电机启动时的关键过程，它通过三个阶段让电机从静止状态平滑过渡到目标速度：
  * 电流斜坡上升阶段（Ramp）
@@ -264,7 +264,7 @@ bool Axis::run_lockin_spin(const LockinConfig_t &lockin_config, bool remain_arme
     return success;
 }
 
-/*ODrive的闭环控制主循环，是带编码器反馈的精确位置/速度控制的核心。*/
+/*闭环控制主循环，是带编码器反馈的精确位置/速度控制的核心。*/
 bool Axis::start_closed_loop_control() {
     bool sensorless_mode = config_.enable_sensorless_mode;
 
@@ -463,7 +463,8 @@ bool Axis::run_idle_loop() {
 }
 
 /**
- * 实现了ODrive电机轴的状态机主循环，是控制系统任务调度的核心。该状态机实现了：
+ * 实现了ODrive电机轴的状态机主循环，是控制系统任务调度的核心，
+ * axis 状态机通过一个任务数组来管理多个顺序执行的任务，该状态机实现的任务包括：
  * 多任务链式执行：支持启动序列、全校准序列等复杂流程
  * 11种轴状态处理：包括校准、回零、闭环控制等
  * 错误恢复机制：自动降级到空闲状态

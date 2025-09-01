@@ -42,7 +42,7 @@ void Controller::move_to_pos(float goal_point) {
 
 /**
  * 这个函数的作用是：相对于当前位置或当前设定值 pos_setpoint_，
- * 增量移动一个 displacement 距离；然后调用 input_pos_updated()，
+ * 增量移动一个 displacement 距离，然后调用 input_pos_updated()，
  * 让控制器根据新的目标位置，开始执行新的轨迹或控制过程。
  */
 void Controller::move_incremental(float displacement, bool from_input_pos = true){
@@ -77,6 +77,11 @@ float Controller::remove_anticogging_bias()
 }
 
 
+/**
+ * 这段是 ODrive 用于抗齿槽效应（Anti-Cogging）校准，是高级电机控制中常用的补偿机制之一。
+ * 抗齿槽效应（Anti-Cogging）是在电机静止或低速时，转子有细微卡滞，
+ * 会导致运动不平滑，特别是在低速精密控制时很明显。
+ */
 /*
  * This anti-cogging implementation iterates through each encoder position,
  * waits for zero velocity & position error,
@@ -85,13 +90,6 @@ float Controller::remove_anticogging_bias()
  * This holding current is added as a feedforward term in the control loop.
  */
 bool Controller::anticogging_calibration(float pos_estimate, float vel_estimate) {
-
-    /**
-     * 这段代码是 ODrive 固件中的一个关键函数，用于抗齿槽效应（Anti-Cogging）校准，
-     * 是高级电机控制中常用的补偿机制之一。抗齿槽效应（Anti-Cogging）是在电机静止或低速时，
-     * 转子有细微卡滞，会导致运动不平滑，特别是在低速精密控制时很明显。
-     */
-
     float pos_err = input_pos_ - pos_estimate; /*计算当前电机位置和设定位置之间的误差。希望它越接近 0 越好，表示电机已经稳定在期望位置。*/
     if (std::abs(pos_err) <= config_.anticogging.calib_pos_threshold / (float)axis_->encoder_.config_.cpr &&
         std::abs(vel_estimate) < config_.anticogging.calib_vel_threshold / (float)axis_->encoder_.config_.cpr) {
@@ -146,15 +144,22 @@ bool Controller::control_mode_updated() {
     return true;
 }
 
-/*更新输入滤波器的参数（带宽 → PID 系数）,根据设定的带宽更新输入滤波器的 kp 和 ki 系数，以便输入信号平滑处理。*/
+/**
+ * 更新输入滤波器的参数（带宽 → PID 系数），
+ * 根据设定的带宽更新输入滤波器的 kp 和 ki 系数，以便输入信号平滑处理。
+ */
 void Controller::update_filter_gains() {
-    /*设定一个最大允许的滤波带宽，不能超过采样率的四分之一（Nyquist 准则的变种）,current_meas_hz 是当前电流采样频率（控制回路频率，单位 Hz）,input_filter_bandwidth 是配置中允许的最大滤波带宽*/
+    /*设定一个最大允许的滤波带宽，不能超过采样率的四分之一（Nyquist 准则的变种）,
+    current_meas_hz 是当前电流采样频率（控制回路频率，单位 Hz）,
+    input_filter_bandwidth 是配置中允许的最大滤波带宽*/
     float bandwidth = std::min(config_.input_filter_bandwidth, 0.25f * current_meas_hz);
     input_filter_ki_ = 2.0f * bandwidth;  // basic conversion to discrete time（离散时间下的积分增益:假设使用一阶低通滤波器设计形式，2×带宽是常用近似）
     input_filter_kp_ = 0.25f * (input_filter_ki_ * input_filter_ki_); // Critically damped（等价于设置滤波器为无振荡、快速响应的平稳系统）
 }
 
-/*速度限制函数，用于限制速度相关的扭矩指令大小，防止速度过冲或抖动。*/
+/**
+ * 速度限制函数，用于限制速度相关的扭矩指令大小，防止速度过冲或抖动。
+ */
 static float limitVel(const float vel_limit, const float vel_estimate, const float vel_gain, const float torque) {
     /*动态计算的扭矩上下限:当 vel_estimate 靠近 vel_limit 时，Tmax 减小，防止继续加速,当速度超限时，Tmax 甚至为负，形成刹车力矩*/
     float Tmax = (vel_limit - vel_estimate) * vel_gain;
@@ -163,7 +168,9 @@ static float limitVel(const float vel_limit, const float vel_estimate, const flo
     return std::clamp(torque, Tmin, Tmax);
 }
 
-/*这是控制核心逻辑的心脏部分，主要完成从输入指令->内部处理->生成最终力矩指令（torque setpoint）的全过程。*/
+/**
+ * 这是控制核心逻辑，主要完成从输入指令->内部处理->生成最终力矩指令（torque setpoint）的全过程。
+ */
 bool Controller::update() {
     /**实时获取并验证电机位置/速度估计值（获取估计值来源:先检查 encoder 提供的位置/速度估计是否有效,如果有效则用对应的估计源）*/
     std::optional<float> pos_estimate_linear = pos_estimate_linear_src_.present();
@@ -211,12 +218,14 @@ bool Controller::update() {
         case INPUT_MODE_INACTIVE: {
             // do nothing
         } break;
-        case INPUT_MODE_PASSTHROUGH: { /*直接传入输入值作为目标*/
+        /*直接传入输入值作为目标*/
+        case INPUT_MODE_PASSTHROUGH: {
             pos_setpoint_ = input_pos_;
             vel_setpoint_ = input_vel_;
             torque_setpoint_ = input_torque_; 
         } break;
-        case INPUT_MODE_VEL_RAMP: { /*速度斜坡计算，限制速度的变化率*/
+        /*速度斜坡计算，限制速度的变化率*/
+        case INPUT_MODE_VEL_RAMP: {
             float max_step_size = std::abs(current_meas_period * config_.vel_ramp_rate);
             float full_step = input_vel_ - vel_setpoint_;
             float step = std::clamp(full_step, -max_step_size, max_step_size);
@@ -224,14 +233,16 @@ bool Controller::update() {
             vel_setpoint_ += step;
             torque_setpoint_ = (step / current_meas_period) * config_.inertia;
         } break;
-        case INPUT_MODE_TORQUE_RAMP: { /*力矩斜坡计算，限制扭矩变化率*/
+        /*力矩斜坡计算，限制扭矩变化率*/
+        case INPUT_MODE_TORQUE_RAMP: {
             float max_step_size = std::abs(current_meas_period * config_.torque_ramp_rate);
             float full_step = input_torque_ - torque_setpoint_;
             float step = std::clamp(full_step, -max_step_size, max_step_size);
 
             torque_setpoint_ += step;
         } break;
-        case INPUT_MODE_POS_FILTER: { /*二阶位置跟踪滤波器，平滑输入位置*/
+        /*二阶位置跟踪滤波器，平滑输入位置*/
+        case INPUT_MODE_POS_FILTER: {
             // 2nd order pos tracking filter
             float delta_pos = input_pos_ - pos_setpoint_; // Pos error
             if (config_.circular_setpoints) {
@@ -247,7 +258,8 @@ bool Controller::update() {
             vel_setpoint_ += current_meas_period * accel; // delta vel
             pos_setpoint_ += current_meas_period * vel_setpoint_; // Delta pos
         } break;
-        case INPUT_MODE_MIRROR: { /*镜像另一个轴的状态*/
+        /*镜像另一个轴的状态*/
+        case INPUT_MODE_MIRROR: {
             if (config_.axis_to_mirror < AXIS_COUNT) {
                 std::optional<float> other_pos = axes[config_.axis_to_mirror].encoder_.pos_estimate_.present();
                 std::optional<float> other_vel = axes[config_.axis_to_mirror].encoder_.vel_estimate_.present();
@@ -269,7 +281,8 @@ bool Controller::update() {
         // case INPUT_MODE_MIX_CHANNELS: {
         //     // NOT YET IMPLEMENTED
         // } break;
-        case INPUT_MODE_TRAP_TRAJ: { /*梯形轨迹规划控制（加减速规划）*/
+        /*梯形轨迹规划控制（加减速规划）*/
+        case INPUT_MODE_TRAP_TRAJ: {
             if(input_pos_updated_){
                 move_to_pos(input_pos_);
                 input_pos_updated_ = false;
@@ -355,7 +368,7 @@ bool Controller::update() {
         vel_des = std::clamp(vel_des, -vel_lim, vel_lim);
     }
 
-    // Check for overspeed fault (done in this module (controller) for cohesion with vel_lim)（如果速度估计超过容忍阈值 → 报错中断）
+    // Check for overspeed fault (done in this module (controller) for cohesion with vel_lim)（如果速度估计超过容忍阈值则报错中断）
     if (config_.enable_overspeed_error) {  // 0.0f to disable
         if (!vel_estimate.has_value()) {
             set_error(ERROR_INVALID_ESTIMATE);
