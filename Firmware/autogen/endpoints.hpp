@@ -28,6 +28,25 @@
 
 namespace fibre {
 
+/**
+ * mbedded_json[] 是 ODrive 对每个函数，每个类对象属性等关键的元数据定义。
+ * 这是一个 JSON 字符串数组，它本质上是 ODrive 的对象模型（Object Model）的静态描述，
+ * 用于支持（如 Fibre、ASCII） 库对应的通信协议对远程类对象属性访问。
+ *
+ * 外部请求: 读取 vbus_voltage (id=2)
+ *     ↓
+ * Fibre/ASCII 协议层收到请求
+ *     ↓
+ * 在 embedded_json[] 中查找 id=2
+ *     ↓
+ * 找到: {"name":"vbus_voltage","id":2,"type":"float","access":"r"}
+ *     ↓
+ * 根据类型 "float" 和内存布局，定位到 &ep_root.vbus_voltage
+ *     ↓
+ * 读取 float 值
+ *     ↓
+ * 序列化为 JSON 或二进制格式返回
+ */
 const unsigned char embedded_json[] = "["
 "{\"name\":\"\",\"id\":0,\"type\":\"json\",\"access\":\"r\"},"
 "{\"name\":\"error\",\"id\":1,\"type\":\"uint8\",\"access\":\"rw\"},"
@@ -929,6 +948,11 @@ const size_t embedded_json_length = sizeof(embedded_json) - 1;
 const uint16_t json_crc_ = calc_crc16<CANONICAL_CRC16_POLYNOMIAL>(PROTOCOL_VERSION, embedded_json, embedded_json_length);
 const uint32_t json_version_id_ = (json_crc_ << 16) | calc_crc16<CANONICAL_CRC16_POLYNOMIAL>(json_crc_, embedded_json, embedded_json_length);
 
+/**
+ * ep_root 是 ODrive 的 “端点根对象”（endpoint root），代表整个设备的对象树根。
+ * Fibre 是 ODrive 的通信协议，支持高效、类型安全的远程访问。
+ * case 18, 22, 26 是调用的方法/属性的唯一 ID，由 Fibre 编译器生成，用于快速分发请求。
+ */
 static void get_property(Introspectable& result, size_t idx) {
     switch (idx) {
         case 1: { ODrive3Intf::get_error(&ep_root, &result.storage_); result.type_info_ = &FibrePropertyTypeInfo<Property<ODriveIntf::Error>>::singleton; } break;
@@ -1410,7 +1434,11 @@ static void get_property(Introspectable& result, size_t idx) {
     }
 }
 
-
+/**
+ * Python 发送 save_configuration 调用（即在 odrivetool 命令行中执行：odrv0.save_configuration()）
+ * Python 库会发送一个 “调用方法” 的 Fibre 命令，指定 方法 ID = 772。
+ * 固件接收并分发到 case 772 调用函数：odrive_save_configuration()
+ */
 bool endpoint_handler(int idx, cbufptr_t* input_buffer, bufptr_t* output_buffer) {
     //Introspectable property = get_property(idx);
     //if property.is_valid()

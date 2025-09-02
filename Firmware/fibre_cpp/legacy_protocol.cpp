@@ -298,7 +298,22 @@ void LegacyProtocolPacketBased::cancel_endpoint_operation(EndpointOperationHandl
 bool fibre::endpoint0_handler(fibre::cbufptr_t* input_buffer, fibre::bufptr_t* output_buffer) {
     // The request must contain a 32 bit integer to specify an offset
     std::optional<uint32_t> offset = read_le<uint32_t>(input_buffer);
-    
+    /**
+     * 外部请求: 读取 vbus_voltage (id=2)
+     *     ↓
+     * Fibre/ASCII 协议层收到请求
+     *     ↓
+     * 在 embedded_json[] 中查找 id=2
+     *     ↓
+     * 找到: {"name":"vbus_voltage","id":2,"type":"float","access":"r"}
+     *     ↓
+     * 根据类型 "float" 和内存布局，定位到 &ep_root.vbus_voltage
+     *     ↓
+     * 读取 float 值
+     *     ↓
+     * 序列化为 JSON 或二进制格式返回
+     */
+
     if (!offset.has_value()) {
         // Didn't receive any offset
         return false;
@@ -311,6 +326,7 @@ bool fibre::endpoint0_handler(fibre::cbufptr_t* input_buffer, fibre::bufptr_t* o
     } else {
         // Return part of the json file
         size_t n_copy = std::min(output_buffer->size(), embedded_json_length - (size_t)*offset);
+        /*根据 offset 和 JSON 数组中定义的 ODrive 对象的静态描述定位到对应的 ODrive 对象属性*/
         memcpy(output_buffer->begin(), embedded_json + *offset, n_copy);
         *output_buffer = output_buffer->skip(n_copy);
         return true;
@@ -489,6 +505,8 @@ void LegacyProtocolPacketBased::on_read_finished(ReadResult result) {
 
         fibre::cbufptr_t input_buffer{rx_buf.begin(), rx_buf.end() - 2};
         fibre::bufptr_t output_buffer{tx_buf_ + 2, expected_response_length};
+
+        /*解析 odrive-utilities(odrivetool) Python 脚本下发的配置指令，然后调用执行配置操作函数*/
         fibre::endpoint_handler(endpoint_id, &input_buffer, &output_buffer);
 
         // Send response

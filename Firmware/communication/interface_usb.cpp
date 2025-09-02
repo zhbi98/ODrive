@@ -177,13 +177,15 @@ static void usb_server_thread(void * ctx) {
                 usb_cdc_rx_stream.connected_ = true;
                 usb_native_rx_stream.connected_ = true;
 
-                fibre_over_usb.start({});
+                /*对于 USB 端口默认接入 Fibre 库 Legacy-Protocol，用于 odrivetool python 脚本实现对电机配置*/
+                fibre_over_usb.start({}); /*Fibre 库 Legacy-Protocol 定义 的 start 函数*/
 
+                /*对于 USB 端口 CDC 串口通信模式根据用户的定义决定使用 Fibre 库的协议还是自定义 AsciiProtocol 协议*/
                 if (odrv.config_.usb_cdc_protocol == ODrive::STREAM_PROTOCOL_TYPE_FIBRE) {
-                    fibre_over_cdc.start({});
+                    fibre_over_cdc.start({}); /*调用 Fibre 库 Legacy-Protocol 定义的 start 函数*/
                 } else if (odrv.config_.usb_cdc_protocol == ODrive::STREAM_PROTOCOL_TYPE_ASCII
                         || odrv.config_.usb_cdc_protocol == ODrive::STREAM_PROTOCOL_TYPE_ASCII_AND_STDOUT) {
-                    ascii_over_cdc.start();
+                    ascii_over_cdc.start(); /*调用自定义 AsciiProtocol 定义的 start 函数*/
                 }
             } break;
 

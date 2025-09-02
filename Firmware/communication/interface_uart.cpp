@@ -123,11 +123,12 @@ bool uart0_stdout_pending = false;
 static void uart_server_thread(void * ctx) {
     (void) ctx;
 
+    /*对于串口通信根据用户的定义决定使用 Fibre 库的协议还是自定义 AsciiProtocol 协议*/
     if (odrv.config_.uart0_protocol == ODrive::STREAM_PROTOCOL_TYPE_FIBRE) {
-        fibre_over_uart.start({});
+        fibre_over_uart.start({}); /*调用 Fibre 库 Legacy-Protocol定义 的 start 函数*/
     } else if (odrv.config_.uart0_protocol == ODrive::STREAM_PROTOCOL_TYPE_ASCII
             || odrv.config_.uart0_protocol == ODrive::STREAM_PROTOCOL_TYPE_ASCII_AND_STDOUT) {
-        ascii_over_uart.start();
+        ascii_over_uart.start(); /*调用自定义 AsciiProtocol 定义的 start 函数*/
     }
 
     for (;;) {

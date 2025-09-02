@@ -389,6 +389,7 @@ static void update_analog_endpoint(const struct PWMMapping_t *map, int gpio)
 {
     float fraction = get_adc_voltage(get_gpio(gpio)) / 3.3f;
     float value = map->min + (fraction * (map->max - map->min));
+    /*解析 odrive-utilities(odrivetool) Python 脚本下发的配置指令，然后调用执行配置操作函数*/
     fibre::set_endpoint_from_float(map->endpoint, value);
 }
 
