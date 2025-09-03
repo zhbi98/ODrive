@@ -23,3 +23,9 @@ Please refer to the [Developer Guide](https://docs.odriverobotics.com/v/latest/d
  * [User Guide](https://docs.odriverobotics.com/)
  * [Forum](https://discourse.odriverobotics.com/)
  * [Chat](https://discourse.odriverobotics.com/t/come-chat-with-us/281)
+
+我简化了 ODrive 的文件组织方式，方便理解代码，并且将 ODrive 复杂的编译方式改成使用 CMake 进行构建，并且可以搭配 VSCode 进行图形化调试，这有利于理解 ODrive 的程序。
+I simplified the file organization of ODrive to make understanding the code easier, and changed ODrive's complex compilation method to use CMake for building. Additionally, it can be paired with VSCode for graphical debugging, which is beneficial for understanding the ODrive program.
+
+如果没有 VSCode 的嵌入式开发环境，可以看看这篇文章：https://blog.csdn.net/jf_52001760/article/details/126826393
+If you don't have VSCode's embedded development environment, check out this article: https://blog.csdn.net/jf_52001760/article/details/126826393

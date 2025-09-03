@@ -37,7 +37,7 @@ public:
         float circular_setpoint_range = 1.0f;    // Circular range when circular_setpoints is true. [turn]
         uint32_t steps_per_circular_range = 1024;
         float inertia = 0.0f;                    // [Nm/(turn/s^2)]
-        float input_filter_bandwidth = 2.0f;     // [1/s]
+        float input_filter_bandwidth = 2.0f;     // [1/s] 例如，如果你要在 20Hz 频率下发送位置命令，请将滤波器带宽设置为 20.0 [1/s]
         float homing_speed = 0.25f;              // [turn/s]
         Anticogging_t anticogging;
         float gain_scheduling_width = 10.0f;

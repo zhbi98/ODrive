@@ -901,12 +901,12 @@ bool Encoder::update() {
     /*计算位置误差（离散检测器）:比较预测位置与实际编码器值的差值。*/
     delta_pos_cpr_counts = wrap_pm(delta_pos_cpr_counts, (float)(config_.cpr));
     delta_pos_cpr_counts_ += 0.1f * (delta_pos_cpr_counts - delta_pos_cpr_counts_); // for debug
-    /*wrap_pm() 使用 ARM 汇编语言实现的单精度浮点数到 32 位有符号整数的转换。它利用了ARM处理器中的向量浮点单元(VFP)提供的VCVT指令来进行类型转换。
+    /**wrap_pm() 使用 ARM 汇编语言实现的单精度浮点数到 32 位有符号整数的转换。它利用了ARM处理器中的向量浮点单元(VFP)提供的VCVT指令来进行类型转换。
     在这里将 delta_pos_cpr_counts / (float)(config_.cpr) 的浮点结果转化为带符号的 32 位整数*/
 
     // pll feedback（PLL 反馈：修正位置和速度）
-    /*这是典型的 PI 控制结构，模仿锁相环的思想：位置偏差->修正估计位置（P）,位置偏差积分->修正速度估计（I）
-    这样既能保证跟踪精度，也具备一定滤波特性，抗抖动。*/
+    /**这是典型的 PI 控制结构，模仿锁相环的思想：位置偏差->修正估计位置（P），
+    位置偏差积分->修正速度估计（I）这样既能保证跟踪精度，也具备一定滤波特性，抗抖动。*/
     pos_estimate_counts_ += current_meas_period * pll_kp_ * delta_pos_counts;
     pos_cpr_counts_ += current_meas_period * pll_kp_ * delta_pos_cpr_counts;
     pos_cpr_counts_ = fmodf_pos(pos_cpr_counts_, (float)(config_.cpr));
@@ -918,7 +918,7 @@ bool Encoder::update() {
         snap_to_zero_vel = true;
     }
 
-    // Outputs from Encoder for Controller
+    // Outputs from Encoder for Controller（编码器输出的可供使用的位置数据）
     pos_estimate_ = pos_estimate_counts_ / (float)config_.cpr;
     vel_estimate_ = vel_estimate_counts_ / (float)config_.cpr;
     

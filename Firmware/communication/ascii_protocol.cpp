@@ -65,7 +65,20 @@ void AsciiProtocol::respond(bool include_checksum, const char * fmt, TArgs&& ...
     sink_.maybe_start_async_write();
 }
 
-
+/**
+ * ASCII 协议是人类可读的，并且是面向行的，每行具有以下格式：
+ * 格式：command *42 ; comment [new line character]
+ * 
+ * *42 代表 GCode 兼容的校验和，可以省略。当且仅当提供校验和时，设备还会在响应中包含校验和 (如果有的话)。
+ * 如果提供了校验和但无效，则会忽略该行。校验和以星号 (*) 前所有字符的按位 x 计算。
+ * 有效校验和的示例：r vbus_voltage *93。
+ * 
+ * 支持 GCode 兼容性 new line character。
+ * 一旦遇到换行符，命令就会被解释（执行）。
+ * 如果命令产生了响应，但 ODrive 还没有完成发送之前的响应，则新的响应将被静默丢弃。
+ * 支持的换行符包括回车符 (r)、换行符 (n)、CR/LF (rn) 和！
+ * ODrive 始终使用 CR/LF (rn) 作为新行终止序列
+ */
 // @brief Executes an ASCII protocol command
 // @param buffer buffer of ASCII encoded characters
 // @param len size of the buffer
@@ -106,7 +119,17 @@ void AsciiProtocol::process_line(cbufptr_t buffer) {
         cmd[len] = 0; // null-terminate
     }
 
-
+    /**
+     * 电机轨迹命令参考：Format: t motor destination
+     * [t]: trajectory 模式
+     * [motor]: 电机 ID 0 或 1.
+     * [destination]: 目标位置[turns]。
+     * 
+     * Example: t 0 -2
+     * 此命令将控制模式设置为 CONTROL_MODE_POSITION_CONTROL, 
+     * 将输入模式设置为 INPUT_MODE_TRAP_TRAJ。
+     * 此命令更新电机的看门狗计时器。
+     */
     // check incoming packet type
     switch(cmd[0]) {
         case 'p': cmd_set_position(cmd, use_checksum);                break;  // position control

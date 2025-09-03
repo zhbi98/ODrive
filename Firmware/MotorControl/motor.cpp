@@ -301,7 +301,6 @@ bool Motor::disarm(bool* p_was_armed) {
  * 发生变化时调用（例如温度变化导致电阻变化，或更换电机后参数不同）。 
  * 详细可查看：https://blog.csdn.net/MOS_JBET/article/details/147070157
  */
-
 // @brief Tune the current controller based on phase resistance and inductance
 // This should be invoked whenever one of these values changes.
 // TODO: allow update on user-request or update automatically via hooks
@@ -320,11 +319,9 @@ bool Motor::apply_config() {
 }
 
 /**
- * 这段代码是关于ODrive中电流采样和增益设置的一部分我们逐步分析这段代码：
+ * 这是 ODrive 对门级驱动的配置，以及关于电流采样和增益设置的相关操作。
  * 
- * 注释：
- * // Solve for exact gain, then snap down to have equal or larger range as requested or largest possible range otherwise
- * 这是一个注释，解释了代码的目的：首先计算精确的增益，然后调整它以获得等于或大于请求的范围，否则使用可能的最大范围。
+ * 首先计算精确的增益，然后调整它以获得等于或大于请求的范围，否则使用可能的最大范围。
  * 
  * 常量定义：
  * constexpr float kMargin = 0.90f; 定义了一个常量kMargin，其值为0.90。这个常量用作一个安全裕量或缩放因子。
@@ -362,14 +359,14 @@ bool Motor::setup() {
     /**
      * 为什么 float max_unity_gain_current = kMargin * max_output_swing * shunt_conductance_; 会得到电流值？
      * 
-     * 在这段代码中，max_unity_gain_current的计算实际上是在确定放大器输出在最大摆幅时，通过分流电阻（shunt resistor）能够产生的最大电流。这里的“单位增益”（unity gain）并不是直接指放大器的增益为1，而是用于描述一种情况，即放大器的输出在其最大摆幅时，对应到分流电阻上的电流情况。
+     * 在这段代码中，max_unity_gain_current 的计算实际上是在确定放大器输出在最大摆幅时，通过分流电阻（shunt resistor）能够产生的最大电流。这里的“单位增益”（unity gain）并不是直接指放大器的增益为1，而是用于描述一种情况，即放大器的输出在其最大摆幅时，对应到分流电阻上的电流情况。
      * 然而，这里的命名可能会有些误导。通常，单位增益指的是放大器增益为1的情况，但在这里，它更像是用来描述在不超出放大器最大输出能力的前提下，通过分流电阻可能达到的最大电流。
-     * 具体来说，max_unity_gain_current的计算过程是这样的：
-     * (1) max_output_swing是放大器的最大输出电压摆幅，单位是伏特（V）。
-     * (2) shunt_conductance_是分流电阻的电导，单位是西门子（S），它是电阻（单位为欧姆，Ω）的倒数。电导越大，电阻越小，导电能力越强。
-     * (3) kMargin是一个安全系数，用来确保放大器输出不会达到其极限值，从而留出一些余量来处理可能的瞬态过载或其他非理想情况。
+     * 具体来说，max_unity_gain_current 的计算过程是这样的：
+     * (1) max_output_swing 是放大器的最大输出电压摆幅，单位是伏特（V）。
+     * (2) shunt_conductance_ 是分流电阻的电导，单位是西门子（S），它是电阻（单位 Ω）的倒数。电导越大，电阻越小，导电能力越强。
+     * (3) kMargin 是一个安全系数，用来确保放大器输出不会达到其极限值，从而留出一些余量来处理可能的瞬态过载或其他非理想情况。
      * 
-     * 因此，当我们将max_output_swing（最大输出电压摆幅）乘以shunt_conductance_（分流电导）时，我们得到的是通过分流电阻的最大可能电流，单位是安培（A）。这是因为根据欧姆定律的变种形式，电流（I）等于电压（V）除以电阻（R），或者等于电压乘以电导（G）：
+     * 因此，当我们将 max_output_swing（最大输出电压摆幅）乘以shunt_conductance_（分流电导）时，我们得到的是通过分流电阻的最大可能电流，单位是安培（A）。这是因为根据欧姆定律的变种形式，电流（I）等于电压（V）除以电阻（R），或者等于电压乘以电导（G）：
      * [ I = \frac{V}{R} = V \cdot G ]
      * 
      * 在这里，我们用最大输出电压摆幅乘以电导来得到最大电流。然后，我们再乘以kMargin来降低这个最大值，以确保系统有一定的安全裕量。
@@ -586,9 +583,10 @@ bool Motor::run_calibration() {
     return true;
 }
 
-/*电机控制主函数中的一环，负责将期望的扭矩转换为电流指令，并调用适当的 FOC（磁场定向控制）函数控制电机。*/
+/**该函数实现了扭矩到电流的转换、限幅、前馈补偿，并为后续 FOC 控制环准备好电流/电压设定值，
+是 ODrive 电机控制的核心环节之一。*/
 void Motor::update(uint32_t timestamp) {
-    // Load torque setpoint, convert to motor direction
+    // Load torque setpoint, convert to motor direction(获取目标扭矩)
     std::optional<float> maybe_torque = torque_setpoint_src_.present();
     if (!maybe_torque.has_value()) {
         error_ |= ERROR_UNKNOWN_TORQUE;
@@ -596,13 +594,16 @@ void Motor::update(uint32_t timestamp) {
     }
     float torque = direction_ * *maybe_torque;
 
+    /*读取上一次的 Id（直轴电流）和 Iq（交轴电流）设定值。*/
     // Load setpoints from previous iteration.
     auto [id, iq] = Idq_setpoint_.previous()
                      .value_or(float2D{0.0f, 0.0f});
+
+    /*获取当前允许的最大电流通过 effective_current_lim_ 获取当前允许的最大电流。*/
     // Load effective current limit
     float ilim = axis_->motor_.effective_current_lim_;
 
-    /*扭矩转电流,对 BLDC、PMSM 电机而言直接除以力矩常数即可，ACIM 中分母还要乘以rotor_flux（磁链）。*/
+    /*Autoflux 跟踪旧的 Iq (可能是上次循环中的 2 范数钳制), 以确保我们追踪的是一个可行的电流。*/
     // Autoflux tracks old Iq (that may be 2-norm clamped last cycle) to make sure we are chasing a feasable current.
     if ((axis_->motor_.config_.motor_type == Motor::MOTOR_TYPE_ACIM) && config_.acim_autoflux_enable) {
         float abs_iq = std::abs(iq);
@@ -613,6 +614,7 @@ void Motor::update(uint32_t timestamp) {
         id = std::clamp(id, -ilim*0.99f, ilim*0.99f); // 1% space reserved for Iq to avoid numerical issues
     }
 
+    /*扭矩转电流,对 BLDC、PMSM 电机而言直接除以力矩常数即可，ACIM 电机分母还要乘以 rotor_flux（磁链）。*/
     // Convert requested torque to current
     if (axis_->motor_.config_.motor_type == Motor::MOTOR_TYPE_ACIM) {
         iq = torque / (axis_->motor_.config_.torque_constant * std::max(axis_->acim_estimator_.rotor_flux_, config_.acim_gain_min_flux));
@@ -620,15 +622,18 @@ void Motor::update(uint32_t timestamp) {
         iq = torque / axis_->motor_.config_.torque_constant;
     }
 
+    /*Id/Iq 限幅，Id 优先，Iq 根据剩余空间做 2-范数限幅，确保总电流不超限。*/
     // 2-norm clamping where Id takes priority
     float iq_lim_sqr = SQ(ilim) - SQ(id);
     float Iq_lim = (iq_lim_sqr <= 0.0f) ? 0.0f : sqrt(iq_lim_sqr);
     iq = std::clamp(iq, -Iq_lim, Iq_lim);
 
+    /*更新电流设定值，除 Gimbal 电机外，更新 Idq_setpoint_*/
     if (axis_->motor_.config_.motor_type != Motor::MOTOR_TYPE_GIMBAL) {
         Idq_setpoint_ = {id, iq};
     }
 
+    /*ACIM 磁链估算器更新，调用 acim_estimator_.update(timestamp)。*/
     // This update call is in bit a weird position because it depends on the
     // Id,q setpoint but outputs the phase velocity that we depend on later
     // in this function.
@@ -642,6 +647,7 @@ void Motor::update(uint32_t timestamp) {
 
     std::optional<float> phase_vel = phase_vel_src_.present();
 
+    /*前馈电压计算，根据配置，计算 R-wL 前馈和反电动势前馈，更新 vd，vq。*/
     if (config_.R_wL_FF_enable) {
         if (!phase_vel.has_value()) {
             error_ |= ERROR_UNKNOWN_PHASE_VEL;
@@ -663,6 +669,7 @@ void Motor::update(uint32_t timestamp) {
         vq += *phase_vel * (2.0f/3.0f) * (config_.torque_constant / config_.pole_pairs);
     }
     
+    /*Gimbal 电机特殊处理，Gimbal 电机将电流直接解释为电压。*/
     if (axis_->motor_.config_.motor_type == Motor::MOTOR_TYPE_GIMBAL) {
         // reinterpret current as voltage
         Vdq_setpoint_ = {vd + id, vq + iq};
@@ -714,6 +721,8 @@ void Motor::current_meas_cb(uint32_t timestamp, std::optional<Iph_ABC_t> current
         float Inorm_sq = 2.0f / 3.0f * (SQ(current_meas_->phA)
                                       + SQ(current_meas_->phB)
                                       + SQ(current_meas_->phC));
+
+        /*SQ(x) 求 x 平方的函数*/
 
         // Hack: we disable the current check during motor calibration because
         // it tends to briefly overshoot when the motor moves to align flux with I_alpha
@@ -770,17 +779,20 @@ void Motor::pwm_update_cb(uint32_t output_timestamp) {
     std::optional<float> i_bus;
 
     if (control_law_) {
+        /*调用矢量控制（SVM 状态机）更新 PWM 控制参数到 pwm_timings*/
         control_law_status = control_law_->get_output(
             output_timestamp, pwm_timings, &i_bus);
     }
 
     // Apply control law to calculate PWM duty cycles
     if (is_armed_ && control_law_status == ERROR_NONE) {
+        /*根据 pwm_timings 最终更新 PWM 驱动，调节电流矢量*/
         uint16_t next_timings[] = {
             (uint16_t)(pwm_timings[0] * (float)TIM_1_8_PERIOD_CLOCKS),
             (uint16_t)(pwm_timings[1] * (float)TIM_1_8_PERIOD_CLOCKS),
             (uint16_t)(pwm_timings[2] * (float)TIM_1_8_PERIOD_CLOCKS)
         };
+        /*根据 next_timings 最终更新 PWM 驱动，调节电流矢量*/
         apply_pwm_timings(next_timings, false);
     } else if (is_armed_) {
         if (!(timer_->Instance->BDTR & TIM_BDTR_MOE) && (control_law_status == ERROR_CONTROLLER_INITIALIZING)) {
