@@ -103,6 +103,7 @@ inline bool is_nan(float x) {
     return __builtin_isnan(x);
 }
 
+/* 跨平台浮点数四舍五入函数，将一个 float 类型的浮点数四舍五入到最接近的整数，并返回 int 类型的结果*/
 // Round to integer
 // Default rounding mode: round to nearest
 inline int round_int(float x) {
@@ -117,14 +118,19 @@ inline int round_int(float x) {
 #endif
 }
 
+/**
+ * 作用是用于环形坐标（circular setpoints）下的位置误差计算，确保误差始终在一个合理的区间内，
+ * 根据 wrap_pm 的计算逻辑，可知区间范围通常是 [-y/2, +y/2])，
+ * 避免因为角度跨越零点导致的数值跳变。
+ */
 // Wrap value to range.
 // With default rounding mode (round to nearest),
 // the result will be in range -y/2 to y/2
 inline float wrap_pm(float x, float y) {
 #ifdef FPU_FPV4
-    float intval = (float)round_int(x / y);
+    float intval = (float)round_int(x / y); /*跨平台浮点数四舍五入*/
 #else
-    float intval = nearbyintf(x / y);
+    float intval = nearbyintf(x / y); /*浮点数四舍五入*/
 #endif
     return x - intval * y;
 }

@@ -264,7 +264,7 @@ bool Axis::run_lockin_spin(const LockinConfig_t &lockin_config, bool remain_arme
     return success;
 }
 
-/*闭环控制主循环，是带编码器反馈的精确位置/速度控制的核心。*/
+/*闭环控制主循环，是带编码器反馈的精确位置/速度控制的核心，这里也涉及无感FOC配置。*/
 bool Axis::start_closed_loop_control() {
     bool sensorless_mode = config_.enable_sensorless_mode;
 
