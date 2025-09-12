@@ -61,6 +61,7 @@ struct ResistanceMeasurementControlLaw : AlphaBetaFrameController {
     }
 
     float get_resistance() {
+        /*根据相电压和采样到的相电流，根据欧姆定律计算出电机相电阻*/
         return test_voltage_ / target_current_;
     }
 
@@ -129,7 +130,10 @@ struct InductanceMeasurementControlLaw : AlphaBetaFrameController {
     float get_inductance() {
         // Note: A more correct formula would also take into account that there is a finite timestep.
         // However, the discretisation in the current control loop inverts the same discrepancy
+        /*dt 计算公式是连续时间近似，未考虑离散控制周期的影响（更正确的公式还应考虑到离散控制周期的时间步长），但由于控制环路也使用相同模型，误差相互抵消*/
+        /*根据最后一次输入的时间戳（来自定时器）和测试开始的时间戳和定时器时钟频率计算出 dt*/
         float dt = (float)(last_input_timestamp_ - start_timestamp_) / (float)TIM_1_8_CLOCK_HZ; // at 216MHz this overflows after 19 seconds
+        /*依据法拉第电磁感应定律在电感中 V=L(dI/dt) 则 L=V/(dI/dt) 这样就可以计算出电机相绕组电感，dI/dt 为电流变化率（单位：A/s）*/
         return std::abs(test_voltage_) / (deltaI_ / dt);
     }
 
@@ -193,7 +197,7 @@ Motor::Motor(TIM_HandleTypeDef* timer,
  * @returns: True on success, false otherwise
  */
 bool Motor::arm(PhaseControlLaw<3>* control_law) {
-    /*重置位置/速度环控制器（如清空PID积分器）等等*/
+    /*启动电机 PWM 输出，同时重置位置/速度环控制器参数（如清空 PID 积分器）等等*/
     axis_->mechanical_brake_.release();
 
     CRITICAL_SECTION() {
@@ -238,6 +242,7 @@ void Motor::apply_pwm_timings(uint16_t timings[3], bool tentative) {
         tim->CCR2 = timings[1];
         tim->CCR3 = timings[2];
         
+        /*把 PWM 参数应用到 PWM 驱动*/
         if (!tentative) {
             if (is_armed_) {
                 // Set the Automatic Output Enable so that the Master Output Enable
@@ -269,7 +274,7 @@ bool Motor::disarm(bool* p_was_armed) {
     
     CRITICAL_SECTION() {
         was_armed = is_armed_;
-        if (is_armed_) {
+        if (is_armed_) { /*解除电机 PWM 输出*/
             gate_driver_.set_enabled(false);
         }
         is_armed_ = false;
@@ -293,19 +298,19 @@ bool Motor::disarm(bool* p_was_armed) {
 }
 
 /**
- * 电流环控制器参数（PID 增益）的自动调谐逻辑。它基于电机的 相电阻（phase resistance） 和相电感（phase inductance） 
- * 动态计算电流环的 比例增益（P-gain）和积分增益（I-gain）。这是 ODrive 实现 高性能电流控制的关键部分。
- * 根据电机参数（phase_inductance 和 phase_resistance）和控制带宽（current_control_bandwidth），
- * 自动计算电流环的 P 增益 和 I 增益。这是一种基于模型的控制器调参（Model-Based Tuning），确保电流环的动态响应最优。
- * 当电机相电阻（phase_resistance） 或 相电感（phase_inductance） 
- * 发生变化时调用（例如温度变化导致电阻变化，或更换电机后参数不同）。 
- * 详细可查看：https://blog.csdn.net/MOS_JBET/article/details/147070157
+ * 电流环控制器参数（PID 增益）的自动调谐逻辑，它基于电机的相电阻和相电感动态实时更新电流
+ * 环的比例增益（P-gain）和积分增益（I-gain），这是实现高性能电流控制的关键部分。
+ * 当电机相电阻 resistance 或相电感 inductance 发生变化时需要调用。
+ * 详细查看：https://blog.csdn.net/MOS_JBET/article/details/147070157
  */
 // @brief Tune the current controller based on phase resistance and inductance
 // This should be invoked whenever one of these values changes.
 // TODO: allow update on user-request or update automatically via hooks
 void Motor::update_current_controller_gains() {
     // Calculate current control gains
+
+    /*根据电机 phase_inductance 和 phase_resistance 和电流控制带宽 current_control_bandwidth 
+    计算电流环的 P 增益 和 I 增益。这是基于模型的控制器调参（Model-Based Tuning），确保电流环的动态响应最优。*/
     float p_gain = config_.current_control_bandwidth * config_.phase_inductance;
     float plant_pole = config_.phase_resistance / config_.phase_inductance;
     current_control_.pi_gains_ = {p_gain, plant_pole * p_gain};
@@ -417,16 +422,15 @@ bool Motor::do_checks(uint32_t timestamp) {
 }
 
 /**
- * 计算电机实际电流限制（effective current limit）的函数，
- * 它综合了多个限制因素（配置值、硬件能力、电压限制等），确保电流控制既满足用户需求，
- * 又不会超出系统安全范围。计算电机运行时允许的 实时最大电流值（单位：A）。
+ * 计算电机运行时允许的实时最大电流值 effective current limit（单位：A），用于后续控制过程中处理电流限制。
  * 详细可查看：https://blog.csdn.net/MOS_JBET/article/details/147070310
  */
 float Motor::effective_current_lim() {
     // Configured limit
-    float current_lim = config_.current_lim; /*这实际就是用户设定的电流限制（如30A）*/
+    float current_lim = config_.current_lim; /*获取用户设定的电流限制（如30A）*/
     // Hardware limit
     if (axis_->motor_.config_.motor_type == Motor::MOTOR_TYPE_GIMBAL) {
+        /*综合配置值、硬件能力、电压限制等多个限制因素，确保电流控制既满足用户需求，又不会超出系统安全范围。*/
         current_lim = std::min(current_lim, 0.98f*one_by_sqrt3*vbus_voltage); //gimbal motor is voltage control
     } else {
         current_lim = std::min(current_lim, axis_->motor_.max_allowed_current_);
@@ -435,26 +439,32 @@ float Motor::effective_current_lim() {
     // Apply thermistor current limiters
     current_lim = std::min(current_lim, motor_thermistor_.get_current_limit(config_.current_lim));
     current_lim = std::min(current_lim, fet_thermistor_.get_current_limit(config_.current_lim));
-    effective_current_lim_ = current_lim;
+    effective_current_lim_ = current_lim; /*更新电流限制用于后续控制过程中处理电流限制*/
 
     return effective_current_lim_;
 }
 
+/*计算电机的最大可用扭矩，用于后续控制过程中处理扭矩限制，注意对于 ACIM 电机可用扭矩允许为 0。*/
 //return the maximum available torque for the motor.
 //Note - for ACIM motors, available torque is allowed to be 0.
 float Motor::max_available_torque() {
+    /*effective_current_lim_ 有效电流限制 (A) 通常是 config_.current_lim 经过弱磁、电压限制等调整后的值*/
+    /*torque_constant 扭矩常数 (N·m/A) 与电机设计相关，Kt = 3/2 * p * Ψ（p: 极对数，Ψ: 磁链）对于 PMSM 电机通常是固定值*/
+    /*rotor_flux_ 转子磁通 (Weber, Wb) ACIM 电机的磁通是可调节的*/
     if (config_.motor_type == Motor::MOTOR_TYPE_ACIM) {
+        /*ACIM 电机 Torque_Max=Ieff*Kt*Ψ*/
         float max_torque = effective_current_lim_ * config_.torque_constant * axis_->acim_estimator_.rotor_flux_;
         max_torque = std::clamp(max_torque, 0.0f, config_.torque_lim);
         return max_torque;
     } else {
+        /*PMSM/步进电机 Torque_Max=Ieff*Kt*/
         float max_torque = effective_current_lim_ * config_.torque_constant;
         max_torque = std::clamp(max_torque, 0.0f, config_.torque_lim);
         return max_torque;
     }
 }
 
-/*将 ADC 原始值转换为电机相电流（单位：安培）的核心函数，主要用于电流采样信号的处理。*/
+/*把在电流采样电路采样到的分压电压对应的 ADC 原始值转换为电机相电流（单位：安培 A）*/
 std::optional<float> Motor::phase_current_from_adcval(uint32_t ADCValue) {
     // Make sure the measurements don't come too close to the current sensor's hardware limitations
     if (ADCValue < CURRENT_ADC_LOWER_BOUND || ADCValue > CURRENT_ADC_UPPER_BOUND) {
@@ -462,9 +472,9 @@ std::optional<float> Motor::phase_current_from_adcval(uint32_t ADCValue) {
         return std::nullopt;
     }
 
-    /*去除ADC偏置（硬件零漂） 1<<11 = 2048 将原始 ADC 值转换为 有符号数（-2048~+2047），代表电流方向（正/负）。*/
+    /*去除 ADC 偏置（硬件零漂） 1<<11=2048 将原始 ADC 值转换为有符号数 (-2048~+2047)，代表电流方向（正/负）。*/
     int adcval_bal = (int)ADCValue - (1 << 11);
-    float amp_out_volt = (3.3f / (float)(1 << 12)) * (float)adcval_bal; /*转换为放大器输出电压*/
+    float amp_out_volt = (3.3f / (float)(1 << 12)) * (float)adcval_bal; /*转换为放大器输出电压（采样电阻电流分压在进入 ADC 前还经过运算放大器放大）*/
     float shunt_volt = amp_out_volt * phase_current_rev_gain_;
     float current = shunt_volt * shunt_conductance_;
     return current;
@@ -476,9 +486,9 @@ std::optional<float> Motor::phase_current_from_adcval(uint32_t ADCValue) {
 
 /**
  * 用于测量电机相电阻（phase resistance）的函数，通过注入测试电流并测量电压降来计算电阻值。
- * 作用：动态测量电机相电阻（单位：Ω），用于自动校准或故障检测。
- * 输入参数：test_current：测试电流幅值（如5A）。max_voltage：允许的最大测试电压（防止过压损坏）。
- * 输出：true：测量成功，结果存入 config_.phase_resistance。false：测量失败（错误码记录在 axis_->error_）。
+ * 动态测量电机相电阻（单位：Ω），用于自动校准或故障检测。
+ * 输入参数：test_current 测试电流幅值（如5A）。max_voltage 允许的最大测试电压（防止过压损坏）。
+ * 输出：true 测量成功，结果存入 config_.phase_resistance。false 测量失败（错误码记录在 axis_->error_）。
  */
 // TODO check Ibeta balance to verify good motor connection
 bool Motor::measure_phase_resistance(float test_current, float max_voltage) {
@@ -522,10 +532,10 @@ bool Motor::measure_phase_resistance(float test_current, float max_voltage) {
 }
 
 /**
- * 用于测量电机相电感（phase inductance）的函数，通过施加交变电压并测量电流变化率来计算电感值。
- * 作用：动态测量电机相电感（单位：H），用于电机参数自动辨识。
- * 输入参数：voltage_low：低电平测试电压（如-5V）voltage_high：高电平测试电压（如+5V）
- * 输出：true：测量成功，结果存入 config_.phase_inductance，false：测量失败（错误码记录在 axis_->error_）
+ * 测量电机相电感（phase inductance）函数，通过施加交变电压并测量电流变化率来计算电感值。
+ * 动态测量电机相电感（单位：H），用于电机参数自动辨识。
+ * 输入参数：voltage_low 低电平测试电压（如-5V）voltage_high 高电平测试电压（如+5V）。
+ * 输出：true 测量成功，结果存入 config_.phase_inductance，false 测量失败（错误码记录在 axis_->error_）
  */
 bool Motor::measure_phase_inductance(float test_voltage) {
     InductanceMeasurementControlLaw control_law;
@@ -614,7 +624,7 @@ void Motor::update(uint32_t timestamp) {
         id = std::clamp(id, -ilim*0.99f, ilim*0.99f); // 1% space reserved for Iq to avoid numerical issues
     }
 
-    /*扭矩转电流,对 BLDC、PMSM 电机而言直接除以力矩常数即可，ACIM 电机分母还要乘以 rotor_flux（磁链）。*/
+    /*扭矩转电流,对 BLDC、PMSM 电机而言直接除以力矩常数即可，ACIM 电机分母还要乘以磁链 (rotor_flux)。*/
     // Convert requested torque to current
     if (axis_->motor_.config_.motor_type == Motor::MOTOR_TYPE_ACIM) {
         iq = torque / (axis_->motor_.config_.torque_constant * std::max(axis_->acim_estimator_.rotor_flux_, config_.acim_gain_min_flux));
@@ -689,6 +699,7 @@ void Motor::current_meas_cb(uint32_t timestamp, std::optional<Iph_ABC_t> current
 
     n_evt_current_measurement_++;
 
+    /*要求校准时间 ≥ 7.5 倍时间常数（一阶系统在 5~7τ 后基本稳定），要求各相偏移值不能太大（如不超过 1A）*/
     bool dc_calib_valid = (dc_calib_running_since_ >= config_.dc_calib_tau * 7.5f)
                        && (abs(DC_calib_.phA) < max_dc_calib_)
                        && (abs(DC_calib_.phB) < max_dc_calib_)
@@ -698,6 +709,7 @@ void Motor::current_meas_cb(uint32_t timestamp, std::optional<Iph_ABC_t> current
         current_meas_ = {0.0f, 0.0f, 0.0f};
         armed_state_ += 1;
     } else if (current.has_value() && dc_calib_valid) {
+        /*在正常运行时，获取真实的三相电流，并减去已校准的 DC 偏移，得到准确的电流值。*/
         current_meas_ = {
             current->phA - DC_calib_.phA,
             current->phB - DC_calib_.phB,
@@ -749,14 +761,22 @@ void Motor::current_meas_cb(uint32_t timestamp, std::optional<Iph_ABC_t> current
 }
 
 /**
+ * 持续采集获取三相电流采样电路的 “零点偏移” 并进行一阶低通滤波。
+ * 当底层硬件计时器触发更新事件时调用（此时恰好 PWM 关闭电路中没有经过电流），此时获取的电流值可以认为是 “零点偏移”。
  * @brief Called when the underlying hardware timer triggers an update event.
  */
 void Motor::dc_calib_cb(uint32_t timestamp, std::optional<Iph_ABC_t> current) {
     const float dc_calib_period = static_cast<float>(2 * TIM_1_8_PERIOD_CLOCKS * (TIM_1_8_RCR + 1)) / TIM_1_8_CLOCK_HZ;
     TaskTimerContext tmr{axis_->task_times_.dc_calib};
-
+    /*电机驱动中，使用电流传感器（采样电阻+运放）测量三相电流（Ia, Ib, Ic）。
+    这些电流采样电路存在硬件偏移 (DC Offset)，运放有输入失调电压，ADC 有偏移误差，
+    导致即使没有电流（0A），传感器输出可能不是 0V。*/
     if (current.has_value()) {
+        /**DC_calib_ 存储的是三相电流采样电路的 “零点偏移”（Zero-Offset 或 DC Bias），
+        用于在电流测量时进行实时校准，消除硬件带来的静态误差。*/
         const float calib_filter_k = std::min(dc_calib_period / config_.dc_calib_tau, 1.0f);
+        /*一阶低通滤波，计算等价于 Y = Y * (1 - k) + x * k*/
+        /*时间常数 k 由 min(dc_calib_period / tau, 1.0) 控制*/
         DC_calib_.phA += (current->phA - DC_calib_.phA) * calib_filter_k;
         DC_calib_.phB += (current->phB - DC_calib_.phB) * calib_filter_k;
         DC_calib_.phC += (current->phC - DC_calib_.phC) * calib_filter_k;
@@ -786,7 +806,7 @@ void Motor::pwm_update_cb(uint32_t output_timestamp) {
 
     // Apply control law to calculate PWM duty cycles
     if (is_armed_ && control_law_status == ERROR_NONE) {
-        /*根据 pwm_timings 最终更新 PWM 驱动，调节电流矢量*/
+        /*根据 pwm_timings 最终更新 PWM 驱动，调节矢量电流*/
         uint16_t next_timings[] = {
             (uint16_t)(pwm_timings[0] * (float)TIM_1_8_PERIOD_CLOCKS),
             (uint16_t)(pwm_timings[1] * (float)TIM_1_8_PERIOD_CLOCKS),

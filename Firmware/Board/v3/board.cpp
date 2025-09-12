@@ -541,7 +541,7 @@ void TIM8_UP_TIM13_IRQHandler(void) {
  * Odrive大部分工作都是在 ControlLoop 这个软件触发 的中断中进行，为什么要在 TIM8_UP_TIM13_IRQHandler 函数中用软件触发，而不在 TIM8_UP_TIM13_IRQHandler 函数中直接执行这些代码？
  * 在 Odrive（或其他基于实时控制的系统）中，大部分工作确实是在 ControlLoop 这样的软件触发中断中进行的。
  * 这种设计是为了确保控制循环（Control Loop）能够定期、精确地执行，这对于实时控制系统来说非常重要。
- * 在这里系统会完成ADC采集、PWM输出更新和实时相电流标定。
+ * 在这里中断函数会完成 ADC 采集，PWM 输出更新和实时相电流标定（获取电流采样电路的零点偏移 Zero-Offset）。
  * 
  * 使用软件触发中断（如NVIC->STIR = ControlLoop_IRQn）而不是直接在定时器中断处理函数（如TIM8_UP_TIM13_IRQHandler）中执行代码的原因有以下几点：
  * (1) 模块化设计：将控制循环的代码放在单独的中断服务程序中，可以使代码更加模块化，提高可读性和可维护性。这样，控制循环的代码可以独立于其他中断或任务运行，不需要关心其他中断是否发生或何时发生。

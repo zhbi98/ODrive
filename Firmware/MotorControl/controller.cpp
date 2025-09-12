@@ -192,7 +192,7 @@ bool Controller::update() {
 
     /*Circular-Position-Control 模式用于连续增量位置运动是有用的，例如转轴无限滚动。
     在正态位置模式下，input_pos 将增长到非常大的值，并且由于浮点取整而失去精度。*/
-    if (axis_->step_dir_active_) { /*step_dir_active_指的是脉冲步进控制方式*/
+    if (axis_->step_dir_active_) { /*step_dir_active_ 指的是脉冲步进控制方式（此时才需要 steps_ 参数）*/
         if (config_.circular_setpoints) {
             /**pos_wrap 用于环形运动 (circular-setpoints) 将位置值包裹在固定范围内，实现位置环的循环范围或周期长度，
             从而避免数值直线累加溢出或漂移。例如旋转轴位置在 0~360 无限循环，本质就是把位置值限制在 [0, pos_wrap) 区间*/

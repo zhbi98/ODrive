@@ -49,7 +49,7 @@ bool SensorlessEstimator::update() {
         return false;
     }
 
-    // Clarke transform
+    // Clarke transform（克拉克变换）
     float I_alpha_beta[2] = {
         current_meas->phA,
         one_by_sqrt3 * (current_meas->phB - current_meas->phC)};
