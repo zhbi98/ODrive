@@ -12,6 +12,12 @@ std::tuple<float, float, float, bool> SVM(float alpha, float beta) {
     int Sextant;
 
     if (beta >= 0.0f) {
+
+        /**矢量处在扇区1的充分必要条件是：Uα＞0，Uβ＞0，√3Uα-Uβ＞0*/
+        /**矢量处在扇区2的充分必要条件是：Uβ＞0，如Uα>0，那么√3Uα-Uβ<0，如Uα<0,那么-√3Uα-Uβ<0*/
+        /**矢量处在扇区3的充分必要条件是：Uα<0，Uβ＞0，-√3Uα-Uβ＞0*/
+        /*https://mp.weixin.qq.com/s/G1_vpEJwX1zFduaLAKom8w*/
+
         if (alpha >= 0.0f) {
             //quadrant I
             if (one_by_sqrt3 * beta > alpha)
@@ -26,6 +32,12 @@ std::tuple<float, float, float, bool> SVM(float alpha, float beta) {
                 Sextant = 2; //sextant v2-v3
         }
     } else {
+
+        /**矢量处在扇区4的充分必要条件是：Uα<0，Uβ<0，√3Uα-Uβ＞0*/
+        /**矢量处在扇区5的充分必要条件是：Uβ＜0，如Uα>0，那么√3Uα-Uβ<0，如Uα<0，那么-√3Uα-Uβ<0*/
+        /**矢量处在扇区6的充分必要条件是：Uα＞0，Uβ<0，-√3Uα-Uβ＞0*/
+        /*https://mp.weixin.qq.com/s/G1_vpEJwX1zFduaLAKom8w*/
+
         if (alpha >= 0.0f) {
             //quadrant IV
             if (-one_by_sqrt3 * beta > alpha)
@@ -40,6 +52,10 @@ std::tuple<float, float, float, bool> SVM(float alpha, float beta) {
                 Sextant = 5; //sextant v5-v6
         }
     }
+
+    /*在传统 SVPWM 基本矢量作用时间算法如 T4=m*Ts*Sin(PI/3-θ),T6=m*Ts*Sin(θ) 中用到了空间角度及三角函数，
+    使得直接计算基本电压矢量作用时间变得十分困难。实际上只要充分利用 Uα 和 Uβ 就可以使计算大为简化，
+    如下面程序中的计算方法。*/
 
     switch (Sextant) {
         // sextant v1-v2

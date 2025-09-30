@@ -42,7 +42,7 @@ void handle_pulse(int channel, uint32_t high_time) {
     float value = odrv.config_.pwm_mappings[channel].min +
                   (fraction * (odrv.config_.pwm_mappings[channel].max - odrv.config_.pwm_mappings[channel].min));
 
-    /*解析 pulse 下发的配置指令，然后调用执行配置操作函数*/
+    /*解析通过 pulse 通信端口下发的配置指令，然后调用执行配置操作函数*/
     fibre::set_endpoint_from_float(odrv.config_.pwm_mappings[channel].endpoint, value);
 }
 

@@ -30,6 +30,23 @@ Motor::Error AlphaBetaFrameController::on_measurement(
     return on_measurement(vbus_voltage, Ialpha_beta, input_timestamp);
 }
 
+/**
+ * 三相电压给定所合成的电压矢量旋转角速度为 ω=2πf，旋转一周所需的时间（三相正弦波周期）为 T=1/f,
+ * 若载波频率是 fs，则频率比为 R=fs/f 即 T/Ts。这样将电压旋转平面等切割成 R 个小增量，
+ * 亦即设定电压矢量每次增量的角度是 2π/R，即 γ=2π/R=2π/fs/f=2π/T/Ts=2πTs/T。
+ * 
+ * - fs: 开关频率或称载波频率（Switching Frequency），单位 Hz（例如 PWM 的频率，如 10 kHz）。
+ * - f: 基波频率（Fundamental Frequency），单位 Hz（例如三相交流电的频率，如 50 Hz 或 400 Hz）。
+ * - R: 频率比。
+ * 
+ * 想象画一个圆：理想情况下，电压矢量应连续平滑地旋转一圈（对应一个正弦周期）。但在数字控制系统中（如 STM32、DSP），
+ * 只能每隔一段时间更新一次角度。这个 “更新间隔” 由 PWM 周期决定，即每 (Ts=1/fs) 秒更新一次。
+ * 所以，在一个完整的基波周期 T=1/f 内，你能更新多少次？是不是 T/Ts 次，即 1/f/1/fs=fs/f。
+ * 这就是 频率比表示：每个基波周期内，控制器执行更新的次数。
+ * 
+ * 在一个 50Hz 正弦波周期（20ms）内，系统会以 10kHz 的频率更新 200 次 电压矢量或 PWM 占空比。
+ * 这就像用 200 个小线段 去逼近一个圆，越多次数，波形越接近理想正弦波。
+ */
 Motor::Error AlphaBetaFrameController::get_output(
             uint32_t output_timestamp, float (&pwm_timings)[3],
             std::optional<float>* ibus) {

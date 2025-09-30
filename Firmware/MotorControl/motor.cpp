@@ -251,14 +251,45 @@ void Motor::apply_pwm_timings(uint16_t timings[3], bool tentative) {
             }
         }
         
+        /**
+         * STM32F4 定时器 BDRT 寄存器各个位的配置:
+         *
+         * MOE（main output enable）：当刹车输入有效时，该位会被硬件异步清0（异步没搞明白什么意思？）。
+         * 0：禁止OC和OCN输出或强制为空闲状态；
+         * 1：若设置了相应的使能位（即TIMX_CCER的CCxE、CCxNE）, 则开启 OC 和 OCN 输出。
+         *
+         * AOE（automatic output enable）：TIM_AutomaticOutput，该位的设置与MOE相关。
+         * 0：MOE位只能被软件置1。
+         * 1：MOE被软件置1或者当刹车信号无效后被更新时间自动置1。
+         * 也就是说当刹车信号有效时，MOE位被硬件清0，该位若为0，则MOE位只能由软件置1(即使刹车信号出现一次，之后无效，)，
+         * 若AOE位为1，则MOE除了软件置1外，当刹车信号失效时，在下一个更新事件时，MOE会被自动置1。
+         *
+         * BKP（break polarity）：TIM_BreakPolarity 刹车输入极性。
+         * 0：低电平有效。
+         * 1：高电平有效。
+         *
+         * BKE（break enable）：TIM_Break，使能。
+         * 0：禁止刹车输入。
+         * 1：使能刹车输入。
+         *
+         * OSSR 设置与MOE相关，即当MOE=1，并且TIM通道为互补输出时有效。
+         * 0：禁止OC/OCN输出。
+         * 1：当CCXE或CCXEN=1时，首先开启OC/OCN并输出无效电平，然后OC/OCN使能输出信号等于1，
+         * 有个前提就是when inactive。
+         *
+         * OSSI:用于当MOE=0；并且通道是输出时，也就是当刹车信号有效时。
+         * 0：禁止OC/OCN输出（OC和OCN的使能信号等于 0）。
+         * 1：当CCXE或CCXEN=1时，OC/OCN首先输出其空闲电平，然后OC/OCN使能输出信号等于 1。
+         */
+
         // If a timer update event occurred just now while we were updating the
         // timings, we can't be sure what values the shadow registers now contain,
         // so we must disarm the motor.
         // (this also protects against the case where the update interrupt has too
         // low priority, but that should not happen)
-        //if (__HAL_TIM_GET_FLAG(htim, TIM_FLAG_UPDATE)) {
-        //    disarm_with_error(ERROR_CONTROL_DEADLINE_MISSED);
-        //}
+        // if (__HAL_TIM_GET_FLAG(htim, TIM_FLAG_UPDATE)) {
+        //     disarm_with_error(ERROR_CONTROL_DEADLINE_MISSED);
+        // }
     }
 }
 
