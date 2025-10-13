@@ -40,8 +40,8 @@ public:
         float acim_autoflux_attack_gain = 10.0f;
         float acim_autoflux_decay_gain = 1.0f;
         
-        bool R_wL_FF_enable = false; // Enable feedforwards for R*I and w*L*I terms
-        bool bEMF_FF_enable = false; // Enable feedforward for bEMF
+        bool R_wL_FF_enable = false; // Enable feedforwards for R*I and w*L*I terms (用于启用/禁用电阻 R 和电感 L 相关的前馈补偿，通常用于补偿电机绕组的电阻和电感效应)
+        bool bEMF_FF_enable = false; // Enable feedforward for bEMF (用于启用/禁用了反电动势前馈补偿)
 
         float I_bus_hard_min = -INFINITY;
         float I_bus_hard_max = INFINITY;

@@ -440,6 +440,7 @@ static bool fetch_and_reset_adcs(
         std::optional<float> phB = motors[0].phase_current_from_adcval(ADC2->JDR1);
         std::optional<float> phC = motors[0].phase_current_from_adcval(ADC3->JDR1);
         if (phB.has_value() && phC.has_value()) {
+            /*根据 BC 相电流，计算出第三相电流，并在这里组合出电机 M0 三相电流 current0*/
             *current0 = {-*phB - *phC, *phB, *phC};
         }
     }
@@ -448,6 +449,7 @@ static bool fetch_and_reset_adcs(
         std::optional<float> phB = motors[1].phase_current_from_adcval(ADC2->DR);
         std::optional<float> phC = motors[1].phase_current_from_adcval(ADC3->DR);
         if (phB.has_value() && phC.has_value()) {
+            /*根据 BC 相电流，计算出第三相电流，并在这里组合出电机 M1 三相电流 current1*/
             *current1 = {-*phB - *phC, *phB, *phC};
         }
     }
@@ -521,9 +523,10 @@ void TIM8_UP_TIM13_IRQHandler(void) {
          * 因为我们没有 USB OTG 模式，所以这样不会浪费常用的中断。同时使用宏重命名，这样便于理解。
          */
 
-        /*这里会触发软中断进入ControlLoop_IRQHandler中断函数，大部分的处理都在是这个函数中完成的*/
+        /*这里会触发软中断进入 ControlLoop_IRQHandler 中断函数，大部分的处理都在是这个函数中完成的*/
         NVIC->STIR = ControlLoop_IRQn;
     } else {
+        // 暂时将所有 PWM 输出重置为 50% 占空比。如果控制循环处理程序及时完成，这些值将在生效前被覆盖。
         // Tentatively reset all PWM outputs to 50% duty cycles. If the control
         // loop handler finishes in time then these values will be overridden
         // before they go into effect.
@@ -538,10 +541,11 @@ void TIM8_UP_TIM13_IRQHandler(void) {
 }
 
 /**
+ * 要理解 ODrive 的控制理论可以对照 FOC 控制技术并阅读该函数开始，该函数完全符合 FOC 控制框图流程实现，包括：电流采集，三环闭环控制，克拉克变换（Clark），Park 变换，反 Park 变换，基本电压矢量工作时间计算都在这里实现。
  * Odrive大部分工作都是在 ControlLoop 这个软件触发 的中断中进行，为什么要在 TIM8_UP_TIM13_IRQHandler 函数中用软件触发，而不在 TIM8_UP_TIM13_IRQHandler 函数中直接执行这些代码？
  * 在 Odrive（或其他基于实时控制的系统）中，大部分工作确实是在 ControlLoop 这样的软件触发中断中进行的。
  * 这种设计是为了确保控制循环（Control Loop）能够定期、精确地执行，这对于实时控制系统来说非常重要。
- * 在这里中断函数会完成 ADC 采集，PWM 输出更新和实时相电流标定（获取电流采样电路的零点偏移 Zero-Offset）。
+ * 在这里中断函数会完成电流 ADC 采集，PWM 输出更新和实时相电流标定（获取电流采样电路的零点偏移 Zero-Offset）。
  * 
  * 使用软件触发中断（如NVIC->STIR = ControlLoop_IRQn）而不是直接在定时器中断处理函数（如TIM8_UP_TIM13_IRQHandler）中执行代码的原因有以下几点：
  * (1) 模块化设计：将控制循环的代码放在单独的中断服务程序中，可以使代码更加模块化，提高可读性和可维护性。这样，控制循环的代码可以独立于其他中断或任务运行，不需要关心其他中断是否发生或何时发生。
@@ -562,7 +566,7 @@ void ControlLoop_IRQHandler(void) {
      * 电机相电流采样，在该函数中获取总线电压，以及两个电机的 AB 相电流，并利用两相电流计算出第三相电流，
      * 在采集电流之前会判断相应电机的通道的门极驱动是否工作被使用，未使用的通道不采集以节约时间。
      */
-    if (!fetch_and_reset_adcs(&current0, &current1)) {
+    if (!fetch_and_reset_adcs(&current0, &current1)) { /*采集电流以及判断是否失败*/
         motors[0].disarm_with_error(Motor::ERROR_BAD_TIMING);
         motors[1].disarm_with_error(Motor::ERROR_BAD_TIMING);
     }
@@ -572,6 +576,9 @@ void ControlLoop_IRQHandler(void) {
     // So for now we guess the current to be 0 (this is not correct shortly after
     // disarming and when the motor spins fast in idle). Passing an invalid
     // current reading would create problems with starting FOC.
+    /*翻译：如果电机的 FETs 没有开关动作，那么我们无法测量电流，因为此时我们需要低端 FETs 导通。
+    所以目前我们假设电流为 0（在解锁后不久以及电机空转高速运转时，这个假设是不正确的）。
+    提供无效的电流读数会在启动 FOC 时造成问题。*/
     if (!(TIM1->BDTR & TIM_BDTR_MOE_Msk)) {
         current0 = {0.0f, 0.0f};
     }
@@ -579,6 +586,7 @@ void ControlLoop_IRQHandler(void) {
         current1 = {0.0f, 0.0f};
     }
 
+    /*前面采集到的电流在这里执行一次电流去零偏，确保电流纯净*/
     motors[0].current_meas_cb(timestamp - TIM1_INIT_COUNT, current0);
     motors[1].current_meas_cb(timestamp, current1);
 
@@ -590,15 +598,17 @@ void ControlLoop_IRQHandler(void) {
         while (!(ADC2->SR & ADC_SR_EOC));
     }
 
+    /*注意：这里再一次采集电流，是采集电流零偏*/
     if (!fetch_and_reset_adcs(&current0, &current1)) {
         motors[0].disarm_with_error(Motor::ERROR_BAD_TIMING);
         motors[1].disarm_with_error(Motor::ERROR_BAD_TIMING);
     }
 
+    /*储存电流零偏，用于下一次电流去零偏*/
     motors[0].dc_calib_cb(timestamp + TIM_1_8_PERIOD_CLOCKS * (TIM_1_8_RCR + 1) - TIM1_INIT_COUNT, current0);
     motors[1].dc_calib_cb(timestamp + TIM_1_8_PERIOD_CLOCKS * (TIM_1_8_RCR + 1), current1);
 
-    /*内部调用矢量控制（SVM 状态机）更新矢量电流输出*/
+    /*内部调用基础电压矢量控制（SVM 状态机）更新合成矢量驱动定向电流输出*/
     motors[0].pwm_update_cb(timestamp + 3 * TIM_1_8_PERIOD_CLOCKS * (TIM_1_8_RCR + 1) - TIM1_INIT_COUNT);
     motors[1].pwm_update_cb(timestamp + 3 * TIM_1_8_PERIOD_CLOCKS * (TIM_1_8_RCR + 1));
 

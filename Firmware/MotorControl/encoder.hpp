@@ -99,7 +99,7 @@ public:
     int32_t shadow_count_ = 0;
     int32_t count_in_cpr_ = 0;
     float interpolation_ = 0.0f;
-    OutputPort<float> phase_ = 0.0f;     // [rad]
+    OutputPort<float> phase_ = 0.0f;     // [rad]，单位为弧度，方便 sin, cos 计算
     OutputPort<float> phase_vel_ = 0.0f; // [rad/s]
     float pos_estimate_counts_ = 0.0f;  // [count]
     float pos_cpr_counts_ = 0.0f;  // [count]

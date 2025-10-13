@@ -376,7 +376,7 @@ bool Controller::update() {
             // Circular delta
             pos_err = pos_setpoint_ - *pos_estimate_circular;
             
-            /**wrap_pm 是用于环形坐标（circular setpoints）下的位置误差计算，确保误差始终在一个合理的区间内
+            /**wrap_pm 是用于环形坐标 (circular setpoints) 下的位置误差计算，确保误差始终在一个合理的区间内
             （根据 wrap_pm 的计算逻辑可知，区间范围通常是 [-range/2, +range/2]），避免因为角度跨越零点导致的数值跳变。
             例如：当位置是环形（比如旋转轴 360 无限循环），直接相减可能得到很大的误差（比如从 359 到 1，直接相减是 -358，但实际只差 2）。
             wrap_pm(x, range) 会把误差 x 包裹到 [-range/2, +range/2] 区间，保证环形运动的误差计算始终是最短路径，
@@ -477,6 +477,10 @@ bool Controller::update() {
         }
         torque = limitVel(config_.vel_limit, *vel_estimate, vel_gain, torque);
     }
+
+    /*注意：实际电路电流大小没有传递到这里的所谓电流闭环控制参与计算，这里的电流闭环控制只负责计算出目标扭矩/电流，
+    最终目标扭矩会传递给电流控制器（通常在 FieldOrientedController 相关模块，采集实际电流值如 Iq_measured_, Id_measured_），
+    电流控制器会根据这个目标扭矩和获取实际电路电流大小，执行 PI 闭环计算，基于计算结果调整驱动信号，实现电流环闭环。*/
 
     // Torque limiting
     bool limited = false;

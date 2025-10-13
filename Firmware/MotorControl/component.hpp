@@ -134,6 +134,7 @@ public:
         content_ = (OutputPort<T>*)nullptr;
     }
 
+    /*返回当前连接源 content_ 的本轮控制循环的有效值，如果没有则返回 std::nullopt。*/
     std::optional<T> present() {
         if (content_.index() == 2) {
             OutputPort<T>* ptr = std::get<2>(content_);

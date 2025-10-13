@@ -264,7 +264,7 @@ bool Axis::run_lockin_spin(const LockinConfig_t &lockin_config, bool remain_arme
     return success;
 }
 
-/*闭环控制主循环，是带编码器反馈的精确位置/速度控制的核心，这里也涉及无感FOC配置。*/
+/*电流环，基于编码器的速度环，位置环闭环控制主循环，精确位置/速度控制的核心，这里也涉及无感 FOC 配置。*/
 bool Axis::start_closed_loop_control() {
     bool sensorless_mode = config_.enable_sensorless_mode;
 
@@ -312,7 +312,7 @@ bool Axis::start_closed_loop_control() {
         motor_.current_control_.Vdq_setpoint_src_.connect_to(&motor_.Vdq_setpoint_);
 
         bool is_acim = motor_.config_.motor_type == Motor::MOTOR_TYPE_ACIM;
-        // phase
+        // phase，用于 SVM 对转子所在扇区的判断，对于无传感器模式扇区判断依赖反电动势判断，传感器模式则依赖编码器
         OutputPort<float>* phase_src = sensorless_mode ? &sensorless_estimator_.phase_ : &encoder_.phase_;
         acim_estimator_.rotor_phase_src_.connect_to(phase_src);
         OutputPort<float>* stator_phase_src = is_acim ? &acim_estimator_.stator_phase_ : phase_src;

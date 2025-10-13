@@ -254,32 +254,31 @@ void Motor::apply_pwm_timings(uint16_t timings[3], bool tentative) {
         /**
          * STM32F4 定时器 BDRT 寄存器各个位的配置:
          *
-         * MOE（main output enable）：当刹车输入有效时，该位会被硬件异步清0（异步没搞明白什么意思？）。
+         * MOE (main output enable)：当刹车输入有效时，该位会被硬件异步清0（异步没搞明白什么意思？）。
          * 0：禁止OC和OCN输出或强制为空闲状态；
          * 1：若设置了相应的使能位（即TIMX_CCER的CCxE、CCxNE）, 则开启 OC 和 OCN 输出。
          *
-         * AOE（automatic output enable）：TIM_AutomaticOutput，该位的设置与MOE相关。
-         * 0：MOE位只能被软件置1。
-         * 1：MOE被软件置1或者当刹车信号无效后被更新时间自动置1。
-         * 也就是说当刹车信号有效时，MOE位被硬件清0，该位若为0，则MOE位只能由软件置1(即使刹车信号出现一次，之后无效，)，
-         * 若AOE位为1，则MOE除了软件置1外，当刹车信号失效时，在下一个更新事件时，MOE会被自动置1。
+         * AOE (automatic output enable)：TIM_AutomaticOutput，该位的设置与MOE相关。
+         * 0：MOE 位只能被软件置1。
+         * 1：MOE 被软件置1或者当刹车信号无效后被更新时间自动置1。
+         * 也就是说当刹车信号有效时，MOE 位被硬件清 0，该位若为 0，则 MOE 位只能由软件置1（即使刹车信号出现一次，之后无效），
+         * 若 AOE 位为 1，则 MOE 除了软件置 1 外，当刹车信号失效时，在下一个更新事件时，MOE 会被自动置 1。
          *
-         * BKP（break polarity）：TIM_BreakPolarity 刹车输入极性。
+         * BKP (break polarity)：TIM_BreakPolarity 刹车输入极性。
          * 0：低电平有效。
          * 1：高电平有效。
          *
-         * BKE（break enable）：TIM_Break，使能。
+         * BKE (break enable)：TIM_Break，使能。
          * 0：禁止刹车输入。
          * 1：使能刹车输入。
          *
-         * OSSR 设置与MOE相关，即当MOE=1，并且TIM通道为互补输出时有效。
-         * 0：禁止OC/OCN输出。
-         * 1：当CCXE或CCXEN=1时，首先开启OC/OCN并输出无效电平，然后OC/OCN使能输出信号等于1，
-         * 有个前提就是when inactive。
+         * OSSR 设置与 MOE 相关，即当 MOE=1，并且 TIM 通道为互补输出时有效。
+         * 0：禁止 OC/OCN 输出。
+         * 1：当 CCXE 或 CCXEN=1 时，首先开启 OC/OCN 并输出无效电平，然后 OC/OCN 使能输出信号等于 1，有个前提就是 When Inactive。
          *
-         * OSSI:用于当MOE=0；并且通道是输出时，也就是当刹车信号有效时。
-         * 0：禁止OC/OCN输出（OC和OCN的使能信号等于 0）。
-         * 1：当CCXE或CCXEN=1时，OC/OCN首先输出其空闲电平，然后OC/OCN使能输出信号等于 1。
+         * OSSI:用于当 MOE=0，并且通道是输出时，也就是当刹车信号有效时。
+         * 0：禁止 OC/OCN 输出（OC 和 OCN 的使能信号等于 0）。
+         * 1：当 CCXE 或 CCXEN=1 时，OC/OCN 首先输出其空闲电平，然后 OC/OCN 使能输出信号等于 1。
          */
 
         // If a timer update event occurred just now while we were updating the
@@ -386,7 +385,7 @@ bool Motor::setup() {
     // or largest possible range otherwise
     constexpr float kMargin = 0.90f;
     /*1.35f 即最大输出摆幅 1.35V，也就是说经过运放放大 x 倍后的最大输出电压因该在 1.35V 之间。
-    详细来说就是当采样电阻流过最大设计电流（例如60A）时在采样电阻两端可以产生最大分压，
+    详细来说就是当采样电阻流过最大设计电流（例如 60A）时在采样电阻两端可以产生最大分压，
     而这个分压经过运放放大 x 倍后的最大输出电压因该在 1.35V 之间。*/
     constexpr float max_output_swing = 1.35f; // [V] out of amplifier
     float max_unity_gain_current = kMargin * max_output_swing * shunt_conductance_; // [A]
@@ -403,11 +402,11 @@ bool Motor::setup() {
      * (3) kMargin 是一个安全系数，用来确保放大器输出不会达到其极限值，从而留出一些余量来处理可能的瞬态过载或其他非理想情况。
      * 
      * 因此，当我们将 max_output_swing（最大输出电压摆幅）乘以shunt_conductance_（分流电导）时，我们得到的是通过分流电阻的最大可能电流，单位是安培（A）。这是因为根据欧姆定律的变种形式，电流（I）等于电压（V）除以电阻（R），或者等于电压乘以电导（G）：
-     * [ I = \frac{V}{R} = V \cdot G ]
+     * [I= U/R = U*G]
      * 
-     * 在这里，我们用最大输出电压摆幅乘以电导来得到最大电流。然后，我们再乘以kMargin来降低这个最大值，以确保系统有一定的安全裕量。
+     * 在这里，我们用最大输出电压摆幅乘以电导来得到最大电流。然后，我们再乘以 kMargin 来降低这个最大值，以确保系统有一定的安全裕量。
      * 不过，需要注意的是，这里的命名和计算方式可能会让不熟悉这段代码的人感到困惑。更准确的命名可能是 
-     * max_safe_current_through_shunt或类似的名称，以更清晰地表明这个变量的含义。
+     * max_safe_current_through_shunt 或类似的名称，以更清晰地表明这个变量的含义。
      */
 
     float actual_gain;
@@ -434,6 +433,7 @@ void Motor::disarm_with_error(Motor::Error error){
     disarm();
 }
 
+/*电机状态检查*/
 bool Motor::do_checks(uint32_t timestamp) {
     gate_driver_.do_checks();
 
@@ -475,12 +475,12 @@ float Motor::effective_current_lim() {
     return effective_current_lim_;
 }
 
-/*计算电机的最大可用扭矩，用于后续控制过程中处理扭矩限制，注意对于 ACIM 电机可用扭矩允许为 0。*/
+/*计算电机的最大可用扭矩，用于三环闭环控制过程中处理扭矩限制，注意对于 ACIM 电机可用扭矩允许为 0。*/
 //return the maximum available torque for the motor.
 //Note - for ACIM motors, available torque is allowed to be 0.
 float Motor::max_available_torque() {
     /*effective_current_lim_ 有效电流限制 (A) 通常是 config_.current_lim 经过弱磁、电压限制等调整后的值*/
-    /*torque_constant 扭矩常数 (N·m/A) 与电机设计相关，Kt = 3/2 * p * Ψ（p: 极对数，Ψ: 磁链）对于 PMSM 电机通常是固定值*/
+    /*torque_constant 扭矩常数 (N·m/A) 与电机设计相关，Kt=3/2*p*Ψ（p: 极对数，Ψ: 磁链）对于 PMSM 电机通常是固定值*/
     /*rotor_flux_ 转子磁通 (Weber, Wb) ACIM 电机的磁通是可调节的*/
     if (config_.motor_type == Motor::MOTOR_TYPE_ACIM) {
         /*ACIM 电机 Torque_Max=Ieff*Kt*Ψ*/
@@ -488,7 +488,7 @@ float Motor::max_available_torque() {
         max_torque = std::clamp(max_torque, 0.0f, config_.torque_lim);
         return max_torque;
     } else {
-        /*PMSM/步进电机 Torque_Max=Ieff*Kt*/
+        /*PMSM 或步进电机 Torque_Max=Ieff*Kt*/
         float max_torque = effective_current_lim_ * config_.torque_constant;
         max_torque = std::clamp(max_torque, 0.0f, config_.torque_lim);
         return max_torque;
@@ -503,7 +503,7 @@ std::optional<float> Motor::phase_current_from_adcval(uint32_t ADCValue) {
         return std::nullopt;
     }
 
-    /*去除 ADC 偏置（硬件零漂） 1<<11=2048 将原始 ADC 值转换为有符号数 (-2048~+2047)，代表电流方向（正/负）。*/
+    /*去除 ADC 偏置（硬件零漂）1<<11=2048 将原始 ADC 值转换为有符号数 (-2048~+2047)，代表电流方向（正/负）。*/
     int adcval_bal = (int)ADCValue - (1 << 11);
     float amp_out_volt = (3.3f / (float)(1 << 12)) * (float)adcval_bal; /*转换为放大器输出电压（采样电阻电流分压在进入 ADC 前还经过运算放大器放大）*/
     float shunt_volt = amp_out_volt * phase_current_rev_gain_;
@@ -624,10 +624,9 @@ bool Motor::run_calibration() {
     return true;
 }
 
-/**该函数实现了扭矩到电流的转换、限幅、前馈补偿，并为后续 FOC 控制环准备好电流/电压设定值，
-是 ODrive 电机控制的核心环节之一。*/
+/**该函数实现了扭矩到电流的转换、限幅、前馈补偿，为后续 FOC 控制环准备好 Idq 电流 Vdq 电压设定值*/
 void Motor::update(uint32_t timestamp) {
-    // Load torque setpoint, convert to motor direction(获取目标扭矩)
+    // Load torque setpoint, convert to motor direction（获取来自 Controller 的目标扭矩）
     std::optional<float> maybe_torque = torque_setpoint_src_.present();
     if (!maybe_torque.has_value()) {
         error_ |= ERROR_UNKNOWN_TORQUE;
@@ -640,7 +639,7 @@ void Motor::update(uint32_t timestamp) {
     auto [id, iq] = Idq_setpoint_.previous()
                      .value_or(float2D{0.0f, 0.0f});
 
-    /*获取当前允许的最大电流通过 effective_current_lim_ 获取当前允许的最大电流。*/
+    /*获取允许最大电流 effective_current_lim_ 参数*/
     // Load effective current limit
     float ilim = axis_->motor_.effective_current_lim_;
 
@@ -652,10 +651,10 @@ void Motor::update(uint32_t timestamp) {
         id += gain * (abs_iq - id) * current_meas_period;
         id = std::clamp(id, config_.acim_autoflux_min_Id, 0.9f * ilim); // 10% space reserved for Iq
     } else {
-        id = std::clamp(id, -ilim*0.99f, ilim*0.99f); // 1% space reserved for Iq to avoid numerical issues
+        id = std::clamp(id, -ilim * 0.99f, ilim * 0.99f); // 1% space reserved for Iq to avoid numerical issues
     }
 
-    /*扭矩转电流,对 BLDC、PMSM 电机而言直接除以力矩常数即可，ACIM 电机分母还要乘以磁链 (rotor_flux)。*/
+    /*扭矩转电流,对 BLDC, PMSM 电机而言直接除以力矩常数即可，ACIM 电机分母还要乘以磁链 (rotor_flux)。*/
     // Convert requested torque to current
     if (axis_->motor_.config_.motor_type == Motor::MOTOR_TYPE_ACIM) {
         iq = torque / (axis_->motor_.config_.torque_constant * std::max(axis_->acim_estimator_.rotor_flux_, config_.acim_gain_min_flux));
@@ -663,13 +662,13 @@ void Motor::update(uint32_t timestamp) {
         iq = torque / axis_->motor_.config_.torque_constant;
     }
 
-    /*Id/Iq 限幅，Id 优先，Iq 根据剩余空间做 2-范数限幅，确保总电流不超限。*/
-    // 2-norm clamping where Id takes priority
-    float iq_lim_sqr = SQ(ilim) - SQ(id);
-    float Iq_lim = (iq_lim_sqr <= 0.0f) ? 0.0f : sqrt(iq_lim_sqr);
-    iq = std::clamp(iq, -Iq_lim, Iq_lim);
+    // 2-norm clamping where Id takes priority（当 d 轴电流 id 确定后，iq 的最大允许值由 
+    // Iqmax=sqrt(Ilim^2-Id^2) 确定指空间上两个向量矩阵的直线距离，类似于求棋盘上两点间的直线距离）
+    float iq_lim_sqr = SQ(ilim) - SQ(id); /*计算约束方程的平方项差值*/
+    float Iq_lim = (iq_lim_sqr <= 0.0f) ? 0.0f : sqrt(iq_lim_sqr); /*开平方得到 q 轴电流上限*/
+    iq = std::clamp(iq, -Iq_lim, Iq_lim); /*将实际 iq 钳制到 [-Iq_lim, Iq_lim] 区间*/
 
-    /*更新电流设定值，除 Gimbal 电机外，更新 Idq_setpoint_*/
+    /*更新电流设定值，除 GIMBAL 电机外，更新 Idq_setpoint_*/
     if (axis_->motor_.config_.motor_type != Motor::MOTOR_TYPE_GIMBAL) {
         Idq_setpoint_ = {id, iq};
     }
@@ -688,8 +687,25 @@ void Motor::update(uint32_t timestamp) {
 
     std::optional<float> phase_vel = phase_vel_src_.present();
 
-    /*前馈电压计算，根据配置，计算 R-wL 前馈和反电动势前馈，更新 vd，vq。*/
-    if (config_.R_wL_FF_enable) {
+    /**
+     * 前馈控制主要应用于该控制系统本身存在较大的滞后作用，如果单单是在系统产生误差之后去控制的话 (PID)，
+     * 那么系统总是跟在干扰后面波动，系统无法稳定。前馈的基本观点就是建立按扰动量进行补偿的开环控制，
+     * 也就是说当影响系统的扰动出现时，按照扰动量的大小直接产生相应的矫正作用，抵消扰动的影响。
+     * 当控制算式选的恰当时，可以达到很高的控制精度。
+     * 反馈控制：也就是输出受到扰动影响后采取校正措施，因此反馈控制是闭环控制系统。
+     * 前馈控制：也就是在输出受到干扰之前采取纠正措施，前馈控制并不依赖于反馈信号。
+     */
+
+    /**
+     * 例如考虑一台热水器，要求在输入水温和水量变化时，维持输出水温不变。
+     * 反馈控制：出水水温低于设定值，则加大热源功率，出水水温高于设定值，则减小热源功率。
+     * 前馈控制：加装进水温度传感器和水量传感器，移除出水温度传感器，根据进水温度与目标温度的温差和水量，
+     * 直接计算得到所需的加热功率，然后直接调整热源。
+     */
+
+    /*根据 R-wL 开启/关闭前馈电压计算，根据电机相电感配置，得出反电动势扰动来计算前馈，调整更新 Vd, Vq 电压*/
+    /*前馈，反馈两者结合，前馈作为先导控制，反馈作为后随控制，保证控制系统极高的稳定性*/
+    if (config_.R_wL_FF_enable) { /*电阻 R 和电感 L 相关的前馈补偿*/
         if (!phase_vel.has_value()) {
             error_ |= ERROR_UNKNOWN_PHASE_VEL;
             return;
@@ -701,7 +717,7 @@ void Motor::update(uint32_t timestamp) {
         vq += config_.phase_resistance * iq;
     }
 
-    if (config_.bEMF_FF_enable) {
+    if (config_.bEMF_FF_enable) { /*用于启用/禁用了反电动势前馈补偿*/
         if (!phase_vel.has_value()) {
             error_ |= ERROR_UNKNOWN_PHASE_VEL;
             return;
@@ -710,7 +726,7 @@ void Motor::update(uint32_t timestamp) {
         vq += *phase_vel * (2.0f/3.0f) * (config_.torque_constant / config_.pole_pairs);
     }
     
-    /*Gimbal 电机特殊处理，Gimbal 电机将电流直接解释为电压。*/
+    /*GIMBAL 电机特殊处理，GIMBAL 电机将电流直接解释为电压。*/
     if (axis_->motor_.config_.motor_type == Motor::MOTOR_TYPE_GIMBAL) {
         // reinterpret current as voltage
         Vdq_setpoint_ = {vd + id, vq + iq};
@@ -780,6 +796,7 @@ void Motor::current_meas_cb(uint32_t timestamp, std::optional<Iph_ABC_t> current
     }
 
     if (control_law_) {
+        /*on_measurement 内部调用 Clarke transform（克拉克变换）更新 Ialpha, Ibeta*/
         Error err = control_law_->on_measurement(vbus_voltage,
                             current_meas_.has_value() ?
                                 std::make_optional(std::array<float, 3>{current_meas_->phA, current_meas_->phB, current_meas_->phC})
@@ -793,7 +810,7 @@ void Motor::current_meas_cb(uint32_t timestamp, std::optional<Iph_ABC_t> current
 
 /**
  * 持续采集获取三相电流采样电路的 “零点偏移” 并进行一阶低通滤波。
- * 当底层硬件计时器触发更新事件时调用（此时恰好 PWM 关闭电路中没有经过电流），此时获取的电流值可以认为是 “零点偏移”。
+ * 当底层硬件计时器触发更新事件时调用（此时恰好 PWM 关闭，电路中没有任何电流经过），此时获取的电流值可以认为是 “零点偏移”。
  * @brief Called when the underlying hardware timer triggers an update event.
  */
 void Motor::dc_calib_cb(uint32_t timestamp, std::optional<Iph_ABC_t> current) {
@@ -837,7 +854,7 @@ void Motor::pwm_update_cb(uint32_t output_timestamp) {
 
     // Apply control law to calculate PWM duty cycles
     if (is_armed_ && control_law_status == ERROR_NONE) {
-        /*根据 pwm_timings 最终更新 PWM 驱动，调节矢量电流*/
+        /*根据最终 pwm_timings 更新 PWM 驱动，调节矢量电流*/
         uint16_t next_timings[] = {
             (uint16_t)(pwm_timings[0] * (float)TIM_1_8_PERIOD_CLOCKS),
             (uint16_t)(pwm_timings[1] * (float)TIM_1_8_PERIOD_CLOCKS),

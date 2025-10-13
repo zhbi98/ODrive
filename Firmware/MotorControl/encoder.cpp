@@ -487,8 +487,8 @@ bool Encoder::run_offset_calibration() {
         return false;
     }
 
-    /*CPR 验证,超重要逻辑：确认你设定的 CPR 和电机 极对数 是否一致*/
-    /*防止你设错配置，比如把编码器 CPR 设成了 2048 实际是 8192*/
+    /*CPR 验证，确认驱动器配置时设定的 CPR 和电机实际脉冲数是否一致*/
+    /*防止脉冲数设置错误，比如把编码器 CPR 设成了 2048 实际是 8192*/
 
     // Check CPR
     float elec_rad_per_enc = axis_->motor_.config_.pole_pairs * 2 * M_PI * (1.0f / (float)(config_.cpr));
@@ -950,17 +950,24 @@ bool Encoder::update() {
         if (interpolation_ > 1.0f) interpolation_ = 1.0f;
         if (interpolation_ < 0.0f) interpolation_ = 0.0f;
     }
-    float interpolated_enc = corrected_enc + interpolation_; /*最后得到一个更平滑的 interpolated_enc 用于电角度等计算*/
+    float interpolated_enc = corrected_enc + interpolation_; /*经过插值最后得到一个更平滑的 interpolated_enc 用于电角度等计算*/
 
-    /*电角度计算（电机控制核心），电角度 phase_ 是控制电机所需的核心变量，使用插值后的编码器位置计算得到。*/
     //// compute electrical phase
     //TODO avoid recomputing elec_rad_per_enc every time
+    //用于在传感器模式下 SVM 对转子所在扇区的判断（编码器还用于闭环控制模式，闭环控制编码器值不要求弧度制）
+
+    /*elec_rad_per_enc 表示每个编码器计数对应的电角度（弧度），M_PI 用于将角度转换为弧度制表示，2*M_PI表示一圈的弧度（360°）。*/
+    /*电机每转一圈，电角度会转 pole_pairs 圈。例如，极对数为 7，则电机轴转一圈，电角度转 7 圈（转子转一圈，会经过 7 个 N 极 和 7 个 S 极）。
+    因为电机内部有定子绕组产生旋转磁场，转子有 N 个磁极（N-S 成对出现），每一对磁极（一个 N 和一个 S）构成一个完整的磁场周期，
+    所以当转子旋转时，每经过一对磁极，磁场就完成一个完整的周期变化（相当于电角度走完 360°）。*/
     float elec_rad_per_enc = axis_->motor_.config_.pole_pairs * 2 * M_PI * (1.0f / (float)(config_.cpr));
+    /*插值后的编码器计数减去相位偏移计数，乘以每个编码器计数对应的电角度（弧度），得到当前电角度（弧度）。*/
     float ph = elec_rad_per_enc * (interpolated_enc - config_.phase_offset_float);
     
     if (is_ready_) {
+        /**wrap_pm_pi 是用于环形参数限制，把角度限制在 [-PI, PI] 区间，防止溢出，还有乘以方向（正反转）。*/
         phase_ = wrap_pm_pi(ph) * config_.direction;
-        phase_vel_ = (2*M_PI) * *vel_estimate_.present() * axis_->motor_.config_.pole_pairs * config_.direction;
+        phase_vel_ = (2*M_PI) * *vel_estimate_.present() * axis_->motor_.config_.pole_pairs * config_.direction; /*弧度/秒*/
     }
 
     return true;

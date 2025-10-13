@@ -7,14 +7,14 @@
 Alpha-Beta 坐标系，变换公式如下。*/
 Motor::Error AlphaBetaFrameController::on_measurement(
             std::optional<float> vbus_voltage,
-            std::optional<std::array<float, 3>> currents,
+            std::optional<std::array<float, 3>> currents, /*接收 Ia, Ib, Ic 三相电流*/
             uint32_t input_timestamp) {
 
     std::optional<float2D> Ialpha_beta;
 
     if (currents.has_value()) {
         /*Clarke transform（克拉克变换），one_by_sqrt3 为 1/√3 的近似值。*/
-        /*输入三相电流 Ia,Ib,Ic 对应 currents[0], currents[1], currents[2]，
+        /*输入三相电流 Ia, Ib, Ic 对应 currents[0], currents[1], currents[2]，
         输出两相静止坐标系下的电流 Ialpha 和 Ibeta*/
         Ialpha_beta = {
             (*currents)[0],
@@ -26,7 +26,8 @@ Motor::Error AlphaBetaFrameController::on_measurement(
         /*Ibeta 计算是使用对称变换矩阵时简化得到的，实际不是这样的*/
     }
     
-    /*注意调用的是 FOC 对象的 on_measurement*/
+    /*注意调用的是 FOC 类对象的 on_measurement 函数（通过第二个形参可知一个是接收三相电流，
+    一个是接收 Ialpha, Ibeta）来更新 FOC 对象要用的 Ialpha, Ibeta 参数*/
     return on_measurement(vbus_voltage, Ialpha_beta, input_timestamp);
 }
 
@@ -91,7 +92,7 @@ Motor::Error FieldOrientedController::on_measurement(
 }
 
 /*Field-Oriented Control (FOC) 负责将 Vdq 指令（旋转坐标系下的电压）转换为 mod_alpha_beta（静止坐标系下的 PWM 调制信号）*/
-/*将控制器计算出的 Vd, Vq 电压指令，经过一系列变换，最终生成 α-β 坐标系下的 PWM 调制信号，用于驱动三相逆变器。*/
+/*将 Motor 控制器计算出的 Vd, Vq 电压指令，经过一系列变换，最终生成 α-β 坐标系下的 PWM 调制信号，用于驱动三相逆变器。*/
 ODriveIntf::MotorIntf::Error FieldOrientedController::get_alpha_beta_output(
         uint32_t output_timestamp, std::optional<float2D>* mod_alpha_beta,
         std::optional<float>* ibus) {
@@ -116,8 +117,8 @@ ODriveIntf::MotorIntf::Error FieldOrientedController::get_alpha_beta_output(
         return Motor::ERROR_UNKNOWN_VBUS_VOLTAGE;
     }
 
-    auto [Vd, Vq] = *Vdq_setpoint_; /*获取 Vd, Vq（控制器输出的 d-q 轴电压指令）*/
-    float phase = *phase_; /*获取当前电角度（由编码器或观测器估计）*/
+    auto [Vd, Vq] = *Vdq_setpoint_; /*获取 Vd, Vq（Motor 控制器输出的 d-q 轴电压指令）*/
+    float phase = *phase_; /*获取当前电角度（弧度，由编码器或观测器估计）*/
     float phase_vel = *phase_vel_; /*获取电角速度*/
     float vbus_voltage = *vbus_voltage_measured_; /*获取母线电压（用于 PWM 归一化）*/
 
@@ -126,8 +127,10 @@ ODriveIntf::MotorIntf::Error FieldOrientedController::get_alpha_beta_output(
     // Park transform (帕克变换 Park Transform)
     if (Ialpha_beta_measured_.has_value()) {
         auto [Ialpha, Ibeta] = *Ialpha_beta_measured_;
-        /*i_timestamp_, ctrl_timestamp_ 为了延迟补偿，补偿了电流采样与控制指令之间的时间延迟，提高控制精度*/
+        /*当前相位+角速度×时间差，即用线性预测法估算在当前采样时刻的电机角度（这是为了延迟补偿，补偿了电流采样与控制指令之间的时间延迟，提高当前相位准确度）*/
+        /*_timestamp_ - ctrl_timestamp_ 为当前采样时刻与控制器上一次更新时间的时间差（单位是定时器计数）。*/
         float I_phase = phase + phase_vel * ((float)(int32_t)(i_timestamp_ - ctrl_timestamp_) / (float)TIM_1_8_CLOCK_HZ);
+        /*计算该角度的余弦和正弦值，通常用于生成三相电流控制信号。*/
         float c_I = our_arm_cos_f32(I_phase);
         float s_I = our_arm_sin_f32(I_phase);
 
@@ -137,9 +140,9 @@ ODriveIntf::MotorIntf::Error FieldOrientedController::get_alpha_beta_output(
             c_I * Ialpha + s_I * Ibeta,
             c_I * Ibeta - s_I * Ialpha
         };
-        /*这个操作是可行的，因为我们会通过编码器输入转子的实时旋转角度，所以这个角度 θ 始终是一个已知数。
-        经过这一步的变换，我们会发现，一个匀速旋转向量在这个坐标系下变成了一个定值！（显然的嘛，因为参考系相对于该向量静止了），
-        这个坐标系下两个控制变量都被线性化了！*/
+        /*这个操作是可行的，因为我们会通过编码器输入转子的实时旋转角度，所以这个角度 θ 始终是一个已知数。经过这一步的变换，
+        我们会发现，一个匀速旋转向量在这个坐标系下变成了一个定值！（显然的嘛，因为参考系相对于该向量静止了），
+        这个坐标系下两个控制变量都被线性化了*/
         Id_measured_ += I_measured_report_filter_k_ * (Idq->first - Id_measured_);
         Iq_measured_ += I_measured_report_filter_k_ * (Idq->second - Iq_measured_);
     } else {
@@ -168,12 +171,12 @@ ODriveIntf::MotorIntf::Error FieldOrientedController::get_alpha_beta_output(
 
         auto [p_gain, i_gain] = *pi_gains_;
         auto [Id, Iq] = *Idq;
-        auto [Id_setpoint, Iq_setpoint] = *Idq_setpoint_;
+        auto [Id_setpoint, Iq_setpoint] = *Idq_setpoint_; /*来自 Motor 类对象的设定参数*/
 
         float Ierr_d = Id_setpoint - Id;
         float Ierr_q = Iq_setpoint - Iq;
 
-        // 这部分计算是 PI 电流控制器的输出
+        // 电流闭环控制，这部分计算是 PI 电流控制器的输出，基于 Id 和 Iq 的 PI 控制（这里才是真正的电流/力矩环实现）。
         // Apply PI control (V{d,q}_setpoint act as feed-forward terms in this mode)
         mod_d = V_to_mod * (Vd + v_current_control_integral_d_ + Ierr_d * p_gain);
         mod_q = V_to_mod * (Vq + v_current_control_integral_q_ + Ierr_q * p_gain);
@@ -211,8 +214,9 @@ ODriveIntf::MotorIntf::Error FieldOrientedController::get_alpha_beta_output(
     final_v_alpha_ = mod_to_V * mod_alpha;
     final_v_beta_ = mod_to_V * mod_beta;
 
-    /*Park 变换完成后，接下来如果我们以 Id,Iq 这两个值作为反馈控制的对象，那么显然就可以使用一些线性控制器来进行控制了，
-    比如 PID（是的，尽管学术界有很多炫酷的高级控制方法， 但是工业界还是偏爱 PID）。*/
+    /*Park 变换完成后，接下来如果我们以 Id, Iq 这两个值作为反馈控制的对象，
+    那么显然就可以使用一些线性控制器来进行控制了，比如 PID 没错工业界还是偏爱 PID，
+    尽管学术界有很多炫酷的高级控制方法*/
     *mod_alpha_beta = {mod_alpha, mod_beta};
 
     if (Idq.has_value()) {
