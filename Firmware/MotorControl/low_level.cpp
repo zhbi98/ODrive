@@ -75,6 +75,7 @@ osThreadId analog_thread = 0;
 *     at a high rate.
 */
 
+/*Low level 包含的内容主要是电机刹车电阻相关的检测和配置。*/
 
 // @brief Arms the brake resistor
 void safety_critical_arm_brake_resistor() {
@@ -331,12 +332,14 @@ void update_brake_current() {
     float brake_current = 0.0f;
     if (odrv.config_.enable_brake_resistor) {
         if (!(odrv.config_.brake_resistance > 0.0f)) {
+            /*如果启动了刹车电阻，但刹车电阻没有接入，报错电机停止*/
             odrv.disarm_with_error(ODrive::ERROR_INVALID_BRAKE_RESISTANCE);
             return;
         }
     
         // Don't start braking until -Ibus > regen_current_allowed
         brake_current = -Ibus_sum - odrv.config_.max_regen_current;
+        /*根据欧姆定律 U=I*R，根据刹车电流得到刹车电压，刹车电压与母线电压的比值就是输出刹车电压需要的占空比*/
         brake_duty = brake_current * odrv.config_.brake_resistance / vbus_voltage;
         
         if (odrv.config_.enable_dc_bus_overvoltage_ramp && (odrv.config_.brake_resistance > 0.0f) && (odrv.config_.dc_bus_overvoltage_ramp_start < odrv.config_.dc_bus_overvoltage_ramp_end)) {
@@ -359,19 +362,21 @@ void update_brake_current() {
         // This cannot result in NaN (safe for race conditions) because we check
         // brake_resistance != 0 further up.
         brake_current = brake_duty * vbus_voltage / odrv.config_.brake_resistance;
+        /*根据欧姆定律 I=U/R，根据刹车占空比和母线电压计算出刹车电流*/
         Ibus_sum += brake_duty * vbus_voltage / odrv.config_.brake_resistance;
     } else {
         brake_duty = 0;
     }
 
     brake_resistor_current = brake_current;
-    ibus_ += odrv.ibus_report_filter_k_ * (Ibus_sum - ibus_);
+    ibus_ += odrv.ibus_report_filter_k_ * (Ibus_sum - ibus_); /*电流滤波*/
 
-    if (Ibus_sum > odrv.config_.dc_max_positive_current) {
+    /*测量母线电压不仅仅用于显示，还可以监测各种过流错误状态*/
+    if (Ibus_sum > odrv.config_.dc_max_positive_current) { /*直流总线过流错误，报错电机强制停止*/
         odrv.disarm_with_error(ODrive::ERROR_DC_BUS_OVER_CURRENT);
         return;
     }
-    if (Ibus_sum < odrv.config_.dc_max_negative_current) {
+    if (Ibus_sum < odrv.config_.dc_max_negative_current) { /*直流总线再生电流过高错误，报错电机强制停止*/
         odrv.disarm_with_error(ODrive::ERROR_DC_BUS_OVER_REGEN_CURRENT);
         return;
     }

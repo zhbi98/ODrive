@@ -1,6 +1,6 @@
 #include <odrive_main.h>
 
-
+/*固定挡块*/
 void Endstop::update() {
     debounceTimer_.update();
     last_state_ = endstop_state_;

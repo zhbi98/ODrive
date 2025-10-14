@@ -643,7 +643,7 @@ void Motor::update(uint32_t timestamp) {
     // Load effective current limit
     float ilim = axis_->motor_.effective_current_lim_;
 
-    /*Autoflux 跟踪旧的 Iq (可能是上次循环中的 2 范数钳制), 以确保我们追踪的是一个可行的电流。*/
+    /*Autoflux 跟踪的是上一次的 Iq (此时的 Iq 还没有更新，需要到下面才会进行更新), 以确保我们追踪的是一个可行的电流。*/
     // Autoflux tracks old Iq (that may be 2-norm clamped last cycle) to make sure we are chasing a feasable current.
     if ((axis_->motor_.config_.motor_type == Motor::MOTOR_TYPE_ACIM) && config_.acim_autoflux_enable) {
         float abs_iq = std::abs(iq);

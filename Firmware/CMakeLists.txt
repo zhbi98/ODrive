@@ -49,7 +49,6 @@ include_directories(
     ./
     ${CMAKE_SOURCE_DIR}/autogen
     ${CMAKE_SOURCE_DIR}/Board/v3/Inc
-    ${CMAKE_SOURCE_DIR}/Board/v3/Inc/prev_board_ver
     ${CMAKE_SOURCE_DIR}/communication
     ${CMAKE_SOURCE_DIR}/communication/can
     ${CMAKE_SOURCE_DIR}/Drivers
@@ -77,7 +76,6 @@ add_definitions(-DFPU_FPV4 -DFIBRE_ENABLE_CLIENT=0 -DFIBRE_ENABLE_SERVER=1 -D__a
 aux_source_directory(${CMAKE_SOURCE_DIR}/autogen AUTOGEN)
 aux_source_directory(${CMAKE_SOURCE_DIR}/Board/v3 BOARD_MAIN)
 aux_source_directory(${CMAKE_SOURCE_DIR}/Board/v3/Src BOARD_SRC)
-aux_source_directory(${CMAKE_SOURCE_DIR}/Board/c3/Src/prev_board_ver BOARD_PREV)
 aux_source_directory(${CMAKE_SOURCE_DIR}/communication COMMUNICATION_MAIN)
 aux_source_directory(${CMAKE_SOURCE_DIR}/communication/can COMMUNICATION_CAN)
 aux_source_directory(${CMAKE_SOURCE_DIR}/Drivers/DRV8301 DRV_DRV8301)
@@ -108,13 +106,12 @@ add_executable(${PROJECT_NAME}.elf
     ${AUTOGEN}
     ${BOARD_MAIN}
     ${BOARD_SRC}
-    ${BOARD_PREV}
     ${COMMUNICATION_MAIN}
     ${COMMUNICATION_CAN}
     ${DRV_DRV8301}
     ${DRV_STM32}
     ${FIBRE_CPP_MAIN}
-    ${PLATFORM_SUPPORT}
+    # ${PLATFORM_SUPPORT}
     ${MOTOR_CONTROL}
     ${RTOS_MAIN}
     ${CMSIS_RTOS}

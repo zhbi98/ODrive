@@ -22,11 +22,11 @@
 
 #include <Drivers/STM32/stm32_system.h>
 
-// --- Add by zhbi98 ----------
-#define HW_VERSION_MAJOR   3U
-#define HW_VERSION_MINOR   6U
+/*------ Add by zhbi98 -------*/
 #define HW_VERSION_VOLTAGE 56U
-// ----------------------------
+#define HW_VERSION_MAJOR 3U
+#define HW_VERSION_MINOR 6U
+/*----------------------------*/
 
 #if HW_VERSION_MINOR <= 3
 #define SHUNT_RESISTANCE (675e-6f)

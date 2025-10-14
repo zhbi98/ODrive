@@ -55,13 +55,6 @@
 
 /* USER CODE BEGIN 0 */
 
-#if HW_VERSION_MAJOR == 3 && HW_VERSION_MINOR == 1 \
-||  HW_VERSION_MAJOR == 3 && HW_VERSION_MINOR == 2
-#include "prev_board_ver/adc_V3_2.c"
-#elif HW_VERSION_MAJOR == 3 && HW_VERSION_MINOR == 3 \
-||  HW_VERSION_MAJOR == 3 && HW_VERSION_MINOR == 4
-#include "prev_board_ver/adc_V3_4.c"
-#else
 /* USER CODE END 0 */
 
 ADC_HandleTypeDef hadc1;
@@ -450,7 +443,6 @@ void HAL_ADC_MspDeInit(ADC_HandleTypeDef* adcHandle)
 } 
 
 /* USER CODE BEGIN 1 */
-#endif  // END ADC Include
 
 /* USER CODE END 1 */
 

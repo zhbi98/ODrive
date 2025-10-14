@@ -7,6 +7,8 @@ float sign_hard(float val) {
     return (std::signbit(val)) ? -1.0f : 1.0f;
 }
 
+/**规划梯形加减速运动轨迹，这个函数会使用梯形速度轨迹（Trapezoidal Trajectory）规划器，
+ * 从当前位置移动到目标点 goal_point，并设置状态让控制器开始执行轨迹。*/
 // Symbol                     Description
 // Ta, Tv and Td              Duration of the stages of the AL profile
 // Xi and Vi                  Adapted initial conditions for the AL profile
