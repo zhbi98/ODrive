@@ -293,6 +293,7 @@ bool Axis::start_closed_loop_control() {
             controller_.pos_estimate_linear_src_.disconnect();
             controller_.pos_wrap_src_.disconnect();
             controller_.vel_estimate_src_.disconnect();
+            /*出现该错误说明电机其余配置正常，但编码器校准参数没有被保存到 Flash，或启动时未读取到编码器校准参数*/
             controller_.set_error(Controller::ERROR_INVALID_LOAD_ENCODER);
             return false;
         }
@@ -462,41 +463,54 @@ bool Axis::run_idle_loop() {
     return check_for_errors();
 }
 
-/**
- * 实现了ODrive电机轴的状态机主循环，是控制系统任务调度的核心，
- * axis 状态机通过一个任务数组来管理多个顺序执行的任务，该状态机实现的任务包括：
- * 多任务链式执行：支持启动序列、全校准序列等复杂流程
- * 11种轴状态处理：包括校准、回零、闭环控制等
- * 错误恢复机制：自动降级到空闲状态
- * 状态过渡管理：确保模式切换的安全性
- */
 // Infinite loop that does calibration and enters main control loop as appropriate
+// ODrive 电机轴的状态切换控制，是控制系统任务调度的核心，axis 状态机通过一个任务数组 
+// task_chain_ 来存储多个需要自动顺序执行的任务。
 void Axis::run_state_machine_loop() {
     for (;;) {
         // Load the task chain if a specific request is pending
         if (requested_state_ != AXIS_STATE_UNDEFINED) {
             size_t pos = 0;
+
+            /*如果使能了开机执行标志 startup_xx_xx，电机一启动自动按顺序执行以下电机校准，
+            编码器校准，使能闭环等步骤，不需要手动逐条输入指令执行这些操作*/
             if (requested_state_ == AXIS_STATE_STARTUP_SEQUENCE) {
+                /*(1) 电机校准（采集相电阻，相电感）*/
                 if (config_.startup_motor_calibration)
                     task_chain_[pos++] = AXIS_STATE_MOTOR_CALIBRATION;
+                /*(2) 编码器校准 (Index 搜索)*/
                 if (config_.startup_encoder_index_search && encoder_.config_.use_index)
                     task_chain_[pos++] = AXIS_STATE_ENCODER_INDEX_SEARCH;
+                /*(3) 编码器校准 (Offset 偏移校准)*/
                 if (config_.startup_encoder_offset_calibration)
                     task_chain_[pos++] = AXIS_STATE_ENCODER_OFFSET_CALIBRATION;
+                /*(4)位置回零*/
                 if (config_.startup_homing)
-                    task_chain_[pos++] = AXIS_STATE_HOMING;
+                    task_chain_[pos++] = AXIS_STATE_HOMING; 
+                /*(5) 使能闭环状态*/
                 if (config_.startup_closed_loop_control)
                     task_chain_[pos++] = AXIS_STATE_CLOSED_LOOP_CONTROL;
+                /*(6) 最后进入空闲状态*/
                 task_chain_[pos++] = AXIS_STATE_IDLE;
-            } else if (requested_state_ == AXIS_STATE_FULL_CALIBRATION_SEQUENCE) {
+            } 
+            /*如果触发了全校准序列指令，电机自动按顺序执行以下电机校准，
+            编码器校准，使能闭环等步骤，不需要手动逐条输入指令执行这些操作*/
+            else if (requested_state_ == AXIS_STATE_FULL_CALIBRATION_SEQUENCE) {
+                /*(1) 电机校准（采集相电阻，相电感）*/
                 task_chain_[pos++] = AXIS_STATE_MOTOR_CALIBRATION;
+                /*(2) 如果编码器是霍尔编码器还要进行极性校准*/
                 if (encoder_.config_.mode == ODriveIntf::EncoderIntf::MODE_HALL)
                     task_chain_[pos++] = AXIS_STATE_ENCODER_HALL_POLARITY_CALIBRATION;
+                /*(2) 编码器校准 (Index 搜索)*/
                 if (encoder_.config_.use_index)
                     task_chain_[pos++] = AXIS_STATE_ENCODER_INDEX_SEARCH;
+                /*(3) 编码器校准 (Offset 偏移校准)*/
                 task_chain_[pos++] = AXIS_STATE_ENCODER_OFFSET_CALIBRATION;
+                /*(4) 最后进入空闲状态*/
                 task_chain_[pos++] = AXIS_STATE_IDLE;
-            } else if (requested_state_ != AXIS_STATE_UNDEFINED) {
+            } 
+            /*执行单个状态切换请求，执行指定的状态*/
+            else if (requested_state_ != AXIS_STATE_UNDEFINED) {
                 task_chain_[pos++] = requested_state_;
                 task_chain_[pos++] = AXIS_STATE_IDLE;
             }
@@ -604,6 +618,7 @@ void Axis::run_state_machine_loop() {
 
             default:
             invalid_state_label:
+                /*发生错误自动降级到空闲状态*/
                 error_ |= ERROR_INVALID_STATE;
                 status = false;  // this will set the state to idle
                 break;
@@ -611,6 +626,7 @@ void Axis::run_state_machine_loop() {
 
         // If the state failed, go to idle, else advance task chain
         if (!status) {
+            /*发生错误自动降级到空闲状态*/
             std::fill(task_chain_.begin(), task_chain_.end(), AXIS_STATE_UNDEFINED);
             current_state_ = AXIS_STATE_IDLE;
         } else {

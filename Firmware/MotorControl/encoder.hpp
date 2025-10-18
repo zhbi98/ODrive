@@ -22,11 +22,13 @@ public:
         float calib_scan_distance = 16.0f * M_PI; // rad electrical
         float calib_scan_omega = 4.0f * M_PI; // rad/s electrical
         float bandwidth = 1000.0f;
-        int32_t phase_offset = 0;        // Offset between encoder count and rotor electrical phase
-        float phase_offset_float = 0.0f; // Sub-count phase alignment offset
-        int32_t cpr = (2048 * 4);   // Default resolution of CUI-AMT102 encoder,
+        int32_t phase_offset = 0;        // Offset between encoder count and rotor electrical phase（编码器校准参数，需要存储到 Flash）
+        float phase_offset_float = 0.0f; // Sub-count phase alignment offset（编码器校准参数，需要存储到 Flash）
+        int32_t cpr = 4000;   // Default resolution of CUI-AMT102 encoder CPR:2048*4, AS5047P Encoder When ABZ interface, CPR:4000, when SPI interface, CPR:16384.
         float index_offset = 0.0f;
-        bool use_index = false;
+        bool use_index = true; // Note Encoder with the interface type [ABZ] needs to use index, the [SPI] Encoder does not*/
+        /*pre_calibrated 如果为 True，这意味着配置中存储的偏移量是有效的，无需通过 run_offset_calibration 来确定。
+        在这种情况下，编码器将在找到索引（index）后立即进入准备状态。*/
         bool pre_calibrated = false; // If true, this means the offset stored in
                                     // configuration is valid and does not need
                                     // be determined by run_offset_calibration.

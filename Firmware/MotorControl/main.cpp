@@ -84,12 +84,14 @@ void StatusLedController::update() {
 }
 
 static bool config_read_all() {
-    /**从 NVM (芯片 Flash) 中加载 (读取) '板载配置参数' 到指定的各个结构体对象指针（内存）中。*/
+    /**从 NVM (芯片 Flash) 中加载 (读取) '板载配置参数'，
+    编码器偏移校准参数到指定的各个结构体对象指针（内存）中。*/
     bool success = board_read_config() &&
            config_manager.read(&odrv.config_) &&
            config_manager.read(&odrv.can_.config_);
 
-    /**从 NVM (芯片 Flash) 中加载 (读取) '电机配置参数' 到指定的各个结构体对象指针（内存）中。*/
+    /**从 NVM (芯片 Flash) 中加载 (读取) '电机配置参数'，
+    编码器偏移校准参数到指定的各个结构体对象指针（内存）中。*/
     for (size_t i = 0; (i < AXIS_COUNT) && success; ++i) {
         success = config_manager.read(&encoders[i].config_) &&
                   config_manager.read(&axes[i].sensorless_estimator_.config_) &&
@@ -317,6 +319,7 @@ void ODrive::do_fast_checks() {
 void ODrive::disarm_with_error(Error error) {
     CRITICAL_SECTION() {
         for (auto& axis: axes) {
+            /*发生系统级错误，例如：总线电压过低，总线电压过高*/
             axis.motor_.disarm_with_error(Motor::ERROR_SYSTEM_LEVEL);
         }
         safety_critical_disarm_brake_resistor();

@@ -372,11 +372,13 @@ void update_brake_current() {
     ibus_ += odrv.ibus_report_filter_k_ * (Ibus_sum - ibus_); /*电流滤波*/
 
     /*测量母线电压不仅仅用于显示，还可以监测各种过流错误状态*/
-    if (Ibus_sum > odrv.config_.dc_max_positive_current) { /*直流总线过流错误，报错电机强制停止*/
+    if (Ibus_sum > odrv.config_.dc_max_positive_current) {
+        /*直流总线过流错误，报错电机强制停止（转速设置过高或负载过大会导致负载电流过大发生该错误）*/
         odrv.disarm_with_error(ODrive::ERROR_DC_BUS_OVER_CURRENT);
         return;
     }
-    if (Ibus_sum < odrv.config_.dc_max_negative_current) { /*直流总线再生电流过高错误，报错电机强制停止*/
+    if (Ibus_sum < odrv.config_.dc_max_negative_current) {
+        /*直流总线再生电流过高错误，报错电机强制停止（转速设置过高或负载过大会导致反电动势电流过大发生该错误）*/
         odrv.disarm_with_error(ODrive::ERROR_DC_BUS_OVER_REGEN_CURRENT);
         return;
     }

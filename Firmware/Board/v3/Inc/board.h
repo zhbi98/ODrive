@@ -28,11 +28,16 @@
 #define HW_VERSION_MINOR 6U
 /*----------------------------*/
 
+/*------ Modify by zhbi98 ----*/
 #if HW_VERSION_MINOR <= 3
 #define SHUNT_RESISTANCE (675e-6f)
 #else
-#define SHUNT_RESISTANCE (500e-6f)
+/*相电流采样电阻设置，该定义要与实际电阻相同或接近，但相差不要超过 10 倍，例如实际为 5mΩ 可以设置为 2mΩ，
+但不能设置为 0.5mΩ，否则可能会导致采集不到正确的电流从而产生 ERROR_PHASE_RESISTANCE_OUT_OF_RANGE 和 
+ERROR_PHASE_INDUCTANCE_OUT_OF_RANGE 错误。*/
+#define SHUNT_RESISTANCE (200e-5f/*500e-6f*/)
 #endif
+/*----------------------------*/
 
 #define AXIS_COUNT (2)
 

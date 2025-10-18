@@ -21,6 +21,8 @@ bool Encoder::apply_config(ODriveIntf::MotorIntf::MotorType motor_type) {
 
     update_pll_gains();
 
+    /*pre_calibrated 如果为 True，这意味着配置中存储的偏移量是有效的，无需通过 run_offset_calibration 来确定。
+    在这种情况下，编码器将在找到索引（index）后立即进入准备状态。*/
     if (config_.pre_calibrated) {
         if (config_.mode == Encoder::MODE_HALL && config_.hall_polarity_calibrated)
             is_ready_ = true;
@@ -389,7 +391,7 @@ bool Encoder::run_hall_phase_calibration() {
 bool Encoder::run_offset_calibration() {
     const float start_lock_duration = 1.0f;
 
-    // Require index found if enabled（检查是否找到 Index 不然报错返回）
+    // Require index found if enabled（编码器校准前没有先执行搜索定位编码器 Index 信号命令）
     if (config_.use_index && !index_found_) {
         set_error(ERROR_INDEX_NOT_FOUND_YET);
         return false;
@@ -522,11 +524,12 @@ bool Encoder::run_offset_calibration() {
 
     axis_->motor_.disarm();
 
-    /*偏移计算，取中值作为编码器偏移位置（相对于电角度中心）*/
-    /*offset_float 是子采样补偿（防止小误差导致 jitter）*/
+    /*计算编码器值相对电角度中心的固定偏移值，取中值作为编码器偏移位置，得出一个固定偏移值（偏移校准参数）*/
     config_.phase_offset = encvaluesum / num_steps;
     int32_t residual = encvaluesum - ((int64_t)config_.phase_offset * (int64_t)num_steps);
+    /*offset_float 是子采样补偿（防止小误差导致 jitter）*/
     config_.phase_offset_float = (float)residual / (float)num_steps + 0.5f;  // add 0.5 to center-align state to phase
+    /*这两个最终计算结果都是编码器偏移校准参数，需要存储到 Flash*/
 
     is_ready_ = true;
     return true;

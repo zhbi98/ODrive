@@ -368,6 +368,7 @@ bool Controller::update() {
 
         if (config_.circular_setpoints) {
             if (!pos_estimate_circular.has_value() || !pos_wrap.has_value()) {
+                /*编码器校准参数没有被保存到 Flash，或启动时未读取到编码器校准参数，导致编码器未启动*/
                 set_error(ERROR_INVALID_ESTIMATE);
                 return false;
             }
@@ -456,6 +457,7 @@ bool Controller::update() {
     float v_err = 0.0f;
     if (config_.control_mode >= CONTROL_MODE_VELOCITY_CONTROL) {
         if (!vel_estimate.has_value()) {
+            /*编码器校准参数没有被保存到 Flash，或启动时未读取到编码器校准参数，导致编码器未启动*/
             set_error(ERROR_INVALID_ESTIMATE);
             return false;
         }
@@ -472,6 +474,7 @@ bool Controller::update() {
     // Velocity limiting in current mode
     if (config_.control_mode < CONTROL_MODE_VELOCITY_CONTROL && config_.enable_torque_mode_vel_limit) {
         if (!vel_estimate.has_value()) {
+            /*编码器校准参数没有被保存到 Flash，或启动时未读取到编码器校准参数，导致编码器未启动*/
             set_error(ERROR_INVALID_ESTIMATE);
             return false;
         }

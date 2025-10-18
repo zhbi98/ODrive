@@ -61,7 +61,7 @@ Motor::Error AlphaBetaFrameController::get_output(
     }
 
     auto [tA, tB, tC, success] = SVM(mod_alpha_beta->first, mod_alpha_beta->second);
-    if (!success) {
+    if (!success) {/*调制幅度错误*/
         return Motor::ERROR_MODULATION_MAGNITUDE;
     }
 

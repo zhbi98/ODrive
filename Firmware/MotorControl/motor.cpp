@@ -593,6 +593,7 @@ bool Motor::measure_phase_inductance(float test_voltage) {
     
     // TODO arbitrary values set for now
     if (!(config_.phase_inductance >= 2e-6f && config_.phase_inductance <= 4000e-6f)) {
+        /*问题可能因为电流采样电阻值定义错误，电源供电不稳定，硬件电路连接异常导致采集不到有效的电流导致电机相电感测量无效*/
         error_ |= ERROR_PHASE_INDUCTANCE_OUT_OF_RANGE;
         success = false;
     }
@@ -601,6 +602,8 @@ bool Motor::measure_phase_inductance(float test_voltage) {
 }
 
 
+/*注意：电机校准并不是校准电机的旋转角度误差，而是在该过程中测量出电机的相电阻和相电感，
+同时保存这两个参数，所以在电机校准这个过程中电机并不会也不需要旋转*/
 // TODO: motor calibration should only be a utility function that's called from
 // the UI on explicit user request. It should take its parameters as input
 // arguments and return the measured results without modifying any config values.
