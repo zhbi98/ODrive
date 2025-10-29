@@ -83,11 +83,8 @@ void Stm32SpiArbiter::transfer_async(SpiTask* task) {
 
     // If the list was empty before, kick off the SPI arbiter now
 
-    /**
-     * 如果 ptr 指针指向任务链表的首地址，则说明前面遍历操作没有找到任何任务节点，就是说任务链表是空的，
-     * 如果任务链表是空的那就直接启动发送操作，如果任务链表不是空的，则只把待发送数据以任务节点的方式放入链表中，
-     * 不立即发送，而是按照排队的操作等待发送
-     */
+    /**如果 ptr 指针指向任务链表的首地址，说明任务链表是空的，不需要排队可以直接启动发送操作，
+     * 如果任务链表非空，则只把待发送数据以任务节点的方式放入链表中，等待排队处理。*/
     if (ptr == &task_list_) {
         if (!start()) {
             if (task->on_complete) {
@@ -120,8 +117,8 @@ bool Stm32SpiArbiter::transfer(SPI_InitTypeDef config, Stm32Gpio ncs_gpio, const
 
     transfer_async(&task);
 
-    /**result 正常情况下表征数据发送成功或失败，所以值一般为 0/1，
-    如果依旧为初始值 0xFF 则说明发生了未知异常*/
+    /**result 正常情况下表示发送成功或失败，所以值一般为 false/true，
+    如果依旧为初始值 0xFF 则说明当前发送任务还没有完成，在此等待完成*/
     while (result == 0xff) {
         osDelay(1); // TODO: honor timeout
     }

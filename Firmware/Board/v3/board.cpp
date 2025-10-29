@@ -434,9 +434,12 @@ static bool fetch_and_reset_adcs(
         return false;
     }
 
+    /*在注入通道 ADC->JDRx 数据寄存器获取注入通道数据，具体看 ADC 配置了解注入通道为哪个硬件通道*/
     vbus_sense_adc_cb(ADC1->JDR1);
 
     if (m0_gate_driver.is_ready()) {
+        /*测量电流需要采集两路电压，所以分配给两个 ADC 交叉采集，可以确保两路采集在此刻同时就绪，
+        同一个 ADC 完成两路采集需要分时通道轮询，无法在同一时刻获得两路数据*/
         std::optional<float> phB = motors[0].phase_current_from_adcval(ADC2->JDR1);
         std::optional<float> phC = motors[0].phase_current_from_adcval(ADC3->JDR1);
         if (phB.has_value() && phC.has_value()) {
@@ -446,6 +449,8 @@ static bool fetch_and_reset_adcs(
     }
 
     if (m1_gate_driver.is_ready()) {
+        /*测量电流需要采集两路电压，所以分配给两个 ADC 交叉采集，可以确保两路采集在此刻同时就绪，
+        同一个 ADC 完成两路采集需要分时通道轮询，无法在同一时刻获得两路数据*/
         std::optional<float> phB = motors[1].phase_current_from_adcval(ADC2->DR);
         std::optional<float> phC = motors[1].phase_current_from_adcval(ADC3->DR);
         if (phB.has_value() && phC.has_value()) {
@@ -514,7 +519,7 @@ void TIM8_UP_TIM13_IRQHandler(void) {
     if (!counting_down) {
         TaskTimer::enabled = odrv.task_timers_armed_;
         // Run sampling handlers and kick off control tasks when TIM8 is
-        // counting up.
+        // counting up（编码器值采样）.
         odrv.sampling_cb();
 
         /**

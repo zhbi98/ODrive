@@ -110,6 +110,10 @@ bool Stm32Gpio::subscribe(bool rising_edge, bool falling_edge, void (*callback)(
     struct subscription_t& subscription = subscriptions[pin_number];
 
     GPIO_TypeDef* no_port = nullptr;
+
+    /*__atomic_compare_exchange_n 是 C++ 用于执行原子比较和交换操作的内置函数。
+    这个函数的作用是比较指针 ptr 指向的值和 expected 指向的值，如果它们相等，
+    就将 desired 的值写入 ptr。如果不相等，ptr 的当前值会被写入 expected。*/
     if (!__atomic_compare_exchange_n(&subscription.port, &no_port, port_, false, __ATOMIC_SEQ_CST, __ATOMIC_SEQ_CST)) {
         return false; // already in use
     }

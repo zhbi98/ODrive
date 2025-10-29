@@ -90,7 +90,7 @@ void MX_ADC1_Init(void)
     /**Configure for the selected ADC regular channel its corresponding rank in the sequencer and its sample time. 
     */
   sConfig.Channel = ADC_CHANNEL_6;
-  sConfig.Rank = 1;
+  sConfig.Rank = 1; /*排列序号，ADC 内核按照这个序号依次轮询各个通道*/
   sConfig.SamplingTime = ADC_SAMPLETIME_3CYCLES;
   if (HAL_ADC_ConfigChannel(&hadc1, &sConfig) != HAL_OK)
   {
@@ -98,7 +98,7 @@ void MX_ADC1_Init(void)
   }
 
     /**Configures for the selected ADC injected channel its corresponding rank in the sequencer and its sample time 
-    */
+    配置注入通道，数据从 JDR 数据寄存器读取*/
   sConfigInjected.InjectedChannel = ADC_CHANNEL_6;
   sConfigInjected.InjectedRank = 1;
   sConfigInjected.InjectedNbrOfConversion = 1;
@@ -150,7 +150,7 @@ void MX_ADC2_Init(void)
   }
 
     /**Configures for the selected ADC injected channel its corresponding rank in the sequencer and its sample time 
-    */
+    配置注入通道，数据从 JDR 数据寄存器读取*/
   sConfigInjected.InjectedChannel = ADC_CHANNEL_10;
   sConfigInjected.InjectedRank = 1;
   sConfigInjected.InjectedNbrOfConversion = 1;
@@ -202,7 +202,7 @@ void MX_ADC3_Init(void)
   }
 
     /**Configures for the selected ADC injected channel its corresponding rank in the sequencer and its sample time 
-    */
+    配置注入通道，数据从 JDR 数据寄存器读取*/
   sConfigInjected.InjectedChannel = ADC_CHANNEL_11;
   sConfigInjected.InjectedRank = 1;
   sConfigInjected.InjectedNbrOfConversion = 1;

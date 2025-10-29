@@ -85,6 +85,9 @@ public:
     int32_t hall_model(float internal_pos);
     bool update();
 
+    /*电机和驱动器一体化集成时编码器用 SPI 接口，
+    电机和驱动器分体时编码器用 ABZ 接口（三线 AB 线+Index信号）*/
+
     TIM_HandleTypeDef* timer_;
     Stm32Gpio index_gpio_;
     Stm32Gpio hallA_gpio_;

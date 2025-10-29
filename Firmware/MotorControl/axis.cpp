@@ -116,6 +116,8 @@ bool Axis::wait_for_control_iteration() {
 // step/direction interface
 void Axis::step_cb() {
     if (step_dir_active_) {
+        /*低频 GPIO 控制模式，外部电平输入步数累计（中断次数累计），注意不是 PWM 输入控制模式，类似 CAN/USB/UASRT 控制模式。*/
+        /*判断输入方向，决定中断后步进要递减还是递增，steps_ 用于位置闭环位置控制*/
         dir_gpio_.read() ? ++steps_ : --steps_;
         controller_.input_pos_updated();
     }

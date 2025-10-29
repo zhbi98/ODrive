@@ -1,3 +1,13 @@
+## Important Note
+
+The firmware in this repository is compatible with the ODrive v3.x (NRND) and is no longer under active development.
+
+Firmware for the new generation of ODrives (ODrive Pro, S1, Micro, etc.) is currently being actively maintained and developed, however its source code is currently not publicly available. Access may be available under NDA, please reach out to us for inquiries.
+
+> 官方声明已经不再开源 ODrive 的新版本代码了，并且这个已经开源的旧硬件配套代码固件也不再进行更新，这个固件版本目前支持到 ODrive v3.x 的硬件，不过这里我会继续进行维护。
+
+## Overview
+
 ![ODrive Logo](https://static1.squarespace.com/static/58aff26de4fcb53b5efd2f02/t/59bf2a7959cc6872bd68be7e/1505700483663/Odrive+logo+plus+text+black.png?format=1000w)
 
 This project is all about accurately driving brushless motors, for cheap. The aim is to make it possible to use inexpensive brushless motors in high performance robotics projects, like [this](https://www.youtube.com/watch?v=WT4E5nb3KtY).
