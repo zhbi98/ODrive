@@ -6,8 +6,8 @@
 
 #include <algorithm>
 
-static constexpr auto CURRENT_ADC_LOWER_BOUND =        (uint32_t)((float)(1 << 12) * CURRENT_SENSE_MIN_VOLT / 3.3f);
-static constexpr auto CURRENT_ADC_UPPER_BOUND =        (uint32_t)((float)(1 << 12) * CURRENT_SENSE_MAX_VOLT / 3.3f);
+static constexpr auto CURRENT_ADC_LOWER_BOUND = (uint32_t)((float)(1 << 12) * CURRENT_SENSE_MIN_VOLT / 3.3f);
+static constexpr auto CURRENT_ADC_UPPER_BOUND = (uint32_t)((float)(1 << 12) * CURRENT_SENSE_MAX_VOLT / 3.3f);
 
 /**
  * @brief This control law adjusts the output voltage such that a predefined
@@ -238,6 +238,12 @@ void Motor::apply_pwm_timings(uint16_t timings[3], bool tentative) {
 
         TIM_HandleTypeDef* htim = timer_;
         TIM_TypeDef* tim = htim->Instance;
+
+        /**CCR 捕获/比较寄存器，该寄存器总共有 4 个 (TIMx_CCR1~4)，对应 4 个输通道 CH1~4。
+        这 4 个寄存器都差不多，以 TIMx_CCR1说明。在 PWM 模式下，CCR1 的值决定了 PWM 信号的占空比。
+        当计数器（TIMx_CNT）的值小于 CCR1 时，输出为高电平。当计数器的值大于或等于 CCR1 时，
+        输出为低电平。通过动态修改 CCR1 的值，可以实现占空比的实时调整。*/
+
         tim->CCR1 = timings[0];
         tim->CCR2 = timings[1];
         tim->CCR3 = timings[2];
@@ -247,39 +253,10 @@ void Motor::apply_pwm_timings(uint16_t timings[3], bool tentative) {
             if (is_armed_) {
                 // Set the Automatic Output Enable so that the Master Output Enable
                 // bit will be automatically enabled on the next update event.
-                tim->BDTR |= TIM_BDTR_AOE;
+                /*如果 AOE 位置 1，在下一个更新事件 UEV 时，MOE 位被自动置 1。*/
+                tim->BDTR |= TIM_BDTR_AOE; /*TIM break and dead-time register*/
             }
         }
-        
-        /**
-         * STM32F4 定时器 BDRT 寄存器各个位的配置:
-         *
-         * MOE (main output enable)：当刹车输入有效时，该位会被硬件异步清0（异步没搞明白什么意思？）。
-         * 0：禁止OC和OCN输出或强制为空闲状态；
-         * 1：若设置了相应的使能位（即TIMX_CCER的CCxE、CCxNE）, 则开启 OC 和 OCN 输出。
-         *
-         * AOE (automatic output enable)：TIM_AutomaticOutput，该位的设置与MOE相关。
-         * 0：MOE 位只能被软件置1。
-         * 1：MOE 被软件置1或者当刹车信号无效后被更新时间自动置1。
-         * 也就是说当刹车信号有效时，MOE 位被硬件清 0，该位若为 0，则 MOE 位只能由软件置1（即使刹车信号出现一次，之后无效），
-         * 若 AOE 位为 1，则 MOE 除了软件置 1 外，当刹车信号失效时，在下一个更新事件时，MOE 会被自动置 1。
-         *
-         * BKP (break polarity)：TIM_BreakPolarity 刹车输入极性。
-         * 0：低电平有效。
-         * 1：高电平有效。
-         *
-         * BKE (break enable)：TIM_Break，使能。
-         * 0：禁止刹车输入。
-         * 1：使能刹车输入。
-         *
-         * OSSR 设置与 MOE 相关，即当 MOE=1，并且 TIM 通道为互补输出时有效。
-         * 0：禁止 OC/OCN 输出。
-         * 1：当 CCXE 或 CCXEN=1 时，首先开启 OC/OCN 并输出无效电平，然后 OC/OCN 使能输出信号等于 1，有个前提就是 When Inactive。
-         *
-         * OSSI:用于当 MOE=0，并且通道是输出时，也就是当刹车信号有效时。
-         * 0：禁止 OC/OCN 输出（OC 和 OCN 的使能信号等于 0）。
-         * 1：当 CCXE 或 CCXEN=1 时，OC/OCN 首先输出其空闲电平，然后 OC/OCN 使能输出信号等于 1。
-         */
 
         // If a timer update event occurred just now while we were updating the
         // timings, we can't be sure what values the shadow registers now contain,
@@ -289,6 +266,18 @@ void Motor::apply_pwm_timings(uint16_t timings[3], bool tentative) {
         // if (__HAL_TIM_GET_FLAG(htim, TIM_FLAG_UPDATE)) {
         //     disarm_with_error(ERROR_CONTROL_DEADLINE_MISSED);
         // }
+
+        /**
+         * [MOE] (Main Output Enable)：当刹车输入有效时，该位会被硬件异步清 0。
+         * 1：若设置了相应的使能位（即TIMX_CCER的CCxE、CCxNE）, 则开启 OC 和 OCN 输出。
+         * 0：禁止 OC 和 OCN 输出或强制为空闲状态。
+         * [AOE] (Automatic Output Enable)：TIM_AutomaticOutput，该位的设置与MOE相关。
+         * 0：MOE 位只能被软件置1。
+         * 1：MOE 被软件置1或者当刹车信号无效后被更新时间自动置1。也就是说当刹车信号有效时，
+         * MOE 位被硬件清 0，该位若为 0，则 MOE 位只能由软件置 1（即使刹车信号出现一次，之后无效）
+         * 若 AOE 位为 1，则 MOE 除了软件置 1 外，当刹车信号失效时，在下一个更新事件时，
+         * MOE 会被自动置 1。
+         */
     }
 }
 
@@ -354,14 +343,8 @@ bool Motor::apply_config() {
 }
 
 /**
- * 这是 ODrive 对门级驱动的配置，以及关于电流采样和增益设置的相关操作。
- * 
- * 首先计算精确的增益，然后调整它以获得等于或大于请求的范围，否则使用可能的最大范围。
- * 
- * 常量定义：
- * constexpr float kMargin = 0.90f; 定义了一个常量kMargin，其值为0.90。这个常量用作一个安全裕量或缩放因子。
- * constexpr float max_output_swing = 1.35f; // [V] out of amplifier 定义了一个常量max_output_swing，表示放大器输出的最大摆幅为1.35伏特。
- * 
+ * 根据ODrive的配置和硬件限制（如放大器的最大输出摆幅和分流电阻的电导）来计算一个合适的增益值。
+ * 这个增益值用于确保在期望的电流范围内，放大器可以正常工作，并且不会超出其规格或导致任何损坏。
  * 计算最大单位增益电流：
  * float max_unity_gain_current = kMargin * max_output_swing * shunt_conductance_; // [A]
  * 这里计算了最大单位增益电流。它使用了之前定义的kMargin、max_output_swing和shunt_conductance_（分流电导，单位为西门子）。
@@ -372,9 +355,6 @@ bool Motor::apply_config() {
  * 这里计算了请求的增益。增益是输出变化与输入变化的比率。在这里，它是电压比，所以单位是伏特/伏特（V/V）。
  * config_.requested_current_range很可能是用户或配置文件中设置的期望电流范围。
  * 通过将最大单位增益电流除以请求的电流范围，我们得到了一个增益值，该值表示在给定的电流范围内，输出电压如何随输入电压变化。
- * 
- * 总的来说，这段代码的目的是根据ODrive的配置和硬件限制（如放大器的最大输出摆幅和分流电阻的电导）
- * 来计算一个合适的增益值。这个增益值用于确保在期望的电流范围内，放大器可以正常工作，并且不会超出其规格或导致任何损坏。
  */
 // @brief Set up the gate drivers
 bool Motor::setup() {
@@ -383,7 +363,7 @@ bool Motor::setup() {
 
     // Solve for exact gain, then snap down to have equal or larger range as requested
     // or largest possible range otherwise
-    constexpr float kMargin = 0.90f;
+    constexpr float kMargin = 0.90f; /*安全裕量或缩放因子*/
     /*1.35f 即最大输出摆幅 1.35V，也就是说经过运放放大 x 倍后的最大输出电压因该在 1.35V 之间。
     详细来说就是当采样电阻流过最大设计电流（例如 60A）时在采样电阻两端可以产生最大分压，
     而这个分压经过运放放大 x 倍后的最大输出电压因该在 1.35V 之间。*/

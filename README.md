@@ -67,3 +67,35 @@ ODrive 的配置都是包含默认值的，所以不需要逐个配置参数电�
 (6) 设置控制模式目标值（位置值，速度值，电流值）来调节电机运行状态。
 
 (7) 电机因异常停止后清除错误重新使能进入闭环状态即可。
+
+## Command
+
+```cpp
+dev0.config.dc_max_negative_current=-2
+
+dev0.axis0.controller.config.vel_limit=50
+
+dev0.axis0.requested_state = AXIS_STATE_FULL_CALIBRATION_SEQUENCE
+
+dev0.axis0.controller.config.control_mode=CONTROL_MODE_TORQUE_CONTROL
+
+dev0.axis0.controller.input_torque=0.02
+
+dev0.axis0.requested_state = AXIS_STATE_CLOSED_LOOP_CONTROL
+
+dump_errors(dev0,True)
+```
+
+## Step/Dir
+
+Choose any two of the unused GPIOs for step/dir input. Let’s say you chose GPIO7 for the step signal and GPIO8 for the dir signal.
+
+选择任意两个未使用的 GPIO 即可用于 step 和 dir 信号步骤/输入，假设您选择 GPIO7 作为步长信号，GPIO8 选择用于 dir 信号。
+
+这种是基于 step 对应 GPIO 中断对外部电平输入步数累计（中断次数累计），达到位置控制信号可以通过普通 GPIO 输入的目的，
+
+注意这不是 PWM 输入控制模式，两者是有区别的。
+
+This is the simplest possible way of controlling the ODrive. It is also the most primitive and fragile one. So don’t use it unless you must interoperate with other hardware that you don’t control.
+
+这是控制 ODrive 最简单的方法。 它也是最原始且最脆弱的一个。因此,除非必须与其他无法控制的硬件进行互操作,否则请勿使用。

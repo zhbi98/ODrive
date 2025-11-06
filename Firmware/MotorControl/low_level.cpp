@@ -83,6 +83,9 @@ void safety_critical_arm_brake_resistor() {
         for (size_t i = 0; i < AXIS_COUNT; ++i) {
             axes[i].motor_.I_bus_ = 0.0f;
         }
+        /*CCR 捕获/比较寄存器，该寄存器总共有 4 个 (TIMx_CCR1~4)，
+        对应 4 个输通道 CH1~4。TIM 在 PWM 模式下，
+        CCR 的值决定了 PWM 信号的占空比。*/
         brake_resistor_armed = true;
 #if HW_VERSION_MAJOR == 3
         htim2.Instance->CCR3 = 0;
@@ -98,6 +101,9 @@ void safety_critical_arm_brake_resistor() {
 void safety_critical_disarm_brake_resistor() {
     bool brake_resistor_was_armed = brake_resistor_armed;
 
+    /*CCR 捕获/比较寄存器，该寄存器总共有 4 个 (TIMx_CCR1~4)，
+    对应 4 个输通道 CH1~4。TIM 在 PWM 模式下，
+    CCR 的值决定了 PWM 信号的占空比。*/
     CRITICAL_SECTION() {
         brake_resistor_armed = false;
 #if HW_VERSION_MAJOR == 3
@@ -121,6 +127,9 @@ void safety_critical_apply_brake_resistor_timings(uint32_t low_off, uint32_t hig
         odrv.disarm_with_error(ODrive::ERROR_BRAKE_DEADTIME_VIOLATION);
     }
 
+    /*CCR 捕获/比较寄存器，该寄存器总共有 4 个 (TIMx_CCR1~4)，
+    对应 4 个输通道 CH1~4。TIM 在 PWM 模式下，
+    CCR 的值决定了 PWM 信号的占空比。*/
     CRITICAL_SECTION() {
         if (brake_resistor_armed) {
 #if HW_VERSION_MAJOR == 3
@@ -138,6 +147,8 @@ void safety_critical_apply_brake_resistor_timings(uint32_t low_off, uint32_t hig
 
 /* Function implementations --------------------------------------------------*/
 
+/*CCR 捕获/比较寄存器，该寄存器总共有 4 个 (TIMx_CCR1~4)，对应 4 个输通道 CH1~4。
+TIM 在 PWM 模式下，CCR 的值决定了 PWM 信号的占空比。*/
 void start_adc_pwm() {
     // Disarm motors
     for (auto& axis: axes) {
