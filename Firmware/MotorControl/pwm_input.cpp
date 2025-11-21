@@ -19,6 +19,7 @@ void PwmInput::init() {
     }
 }
 
+/*这些表达式按 1MHz 进行整数除法，因此对于非整数 MHz 的时钟频率将是不正确的。*/
 //TODO: These expressions have integer division by 1MHz, so it will be incorrect for clock speeds of not-integer MHz
 #define TIM_2_5_CLOCK_HZ        TIM_APB1_CLOCK_HZ
 #define PWM_MIN_HIGH_TIME          ((TIM_2_5_CLOCK_HZ / 1000000UL) * 1000UL) // 1ms high is considered full reverse

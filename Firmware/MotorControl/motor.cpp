@@ -253,7 +253,7 @@ void Motor::apply_pwm_timings(uint16_t timings[3], bool tentative) {
             if (is_armed_) {
                 // Set the Automatic Output Enable so that the Master Output Enable
                 // bit will be automatically enabled on the next update event.
-                /*如果 AOE 位置 1，在下一个更新事件 UEV 时，MOE 位被自动置 1。*/
+                /*BDTR 刹车/死区寄存器，如果 AOE 位置 1，在下一个更新事件 UEV 时，MOE 位被自动置 1。*/
                 tim->BDTR |= TIM_BDTR_AOE; /*TIM break and dead-time register*/
             }
         }
@@ -846,6 +846,7 @@ void Motor::pwm_update_cb(uint32_t output_timestamp) {
         /*根据 next_timings 最终更新 PWM 驱动，调节电流矢量*/
         apply_pwm_timings(next_timings, false);
     } else if (is_armed_) {
+         /*BDTR 刹车/死区寄存器*/
         if (!(timer_->Instance->BDTR & TIM_BDTR_MOE) && (control_law_status == ERROR_CONTROLLER_INITIALIZING)) {
             // If the PWM output is armed in software but not yet in
             // hardware we tolerate the "initializing" error.

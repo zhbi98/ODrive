@@ -918,7 +918,9 @@ bool Encoder::update() {
         snap_to_zero_vel = true;
     }
 
-    // Outputs from Encoder for Controller（编码器输出的可供使用的位置数据）
+    // Outputs from Encoder for Controller（编码器输出给 Controller 使用的位置数据，单位 turn）
+    // pos_estimate_counts_ 是编码器实时总计数，cpr 是每圈计数（counts per revolution），
+    // 所以 pos_estimate_ 位置值的单位是“转数” (mechanical revolutions / turns)。
     pos_estimate_ = pos_estimate_counts_ / (float)config_.cpr;
     vel_estimate_ = vel_estimate_counts_ / (float)config_.cpr;
     
